@@ -138,7 +138,7 @@ export default function App() {
       const isLoser = losingTeam.some(l => l.id === p.id);
       
       if (isWinner) return { ...p, win: p.win + 1, mmr: p.mmr + 15 };
-      if (isLoser) return { ...p, lose: p.lose + 1, mmr: Math.max(800, p.mmr - 10) };
+      if (isLoser) return { ...p, lose: p.lose + 1, mmr: Math.max(10, p.mmr - 10) };
       return p;
     });
     
