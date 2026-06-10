@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, RefreshCw, Trophy, DollarSign, Swords, Clock, Trash2, History, Settings, Play, StopCircle } from 'lucide-react';
+import { Users, UserPlus, RefreshCw, Trophy, DollarSign, Swords, Clock, Trash2, History, Settings, Play, StopCircle, CheckSquare, Square } from 'lucide-react';
 
 export default function App() {
   // ==========================================
@@ -11,20 +11,14 @@ export default function App() {
   // 2. STATES: ระบบรายชื่อและจับคู่ (Roster & Matchmaking)
   // ==========================================
   const [players, setPlayers] = useState(() => {
-    const localData = localStorage.getItem('badminton_players_v3');
+    const localData = localStorage.getItem('badminton_players_v4');
     return localData ? JSON.parse(localData) : [
-      { id: 1, name: 'พี่นก', mmr: 100, win: 0, lose: 0 },
-      { id: 2, name: 'ตอง', mmr: 100, win: 0, lose: 0 },
-      { id: 3, name: 'คิม', mmr: 100, win: 0, lose: 0 },
-      { id: 4, name: 'น้องมาย', mmr: 100, win: 0, lose: 0 },
-      { id: 5, name: 'ภูมิ', mmr: 100, win: 0, lose: 0 },
-      { id: 6, name: 'ชมพู่', mmr: 100, win: 0, lose: 0 },
-      { id: 7, name: 'บีม', mmr: 100, win: 0, lose: 0 },
-      { id: 8, name: 'แตง', mmr: 100, win: 0, lose: 0 },
-      { id: 9, name: 'นีโอ', mmr: 100, win: 0, lose: 0 },
-      { id: 10, name: 'พี่หญิง', mmr: 100, win: 0, lose: 0 },
-      { id: 11, name: 'ฟีฟ่า', mmr: 100, win: 0, lose: 0 },
-      { id: 12, name: 'ขวัญ', mmr: 100, win: 0, lose: 0 },
+      { id: 1, name: 'A', mmr: 100, win: 0, lose: 0, isActive: true },
+      { id: 2, name: 'B', mmr: 100, win: 0, lose: 0, isActive: true },
+      { id: 3, name: 'C', mmr: 100, win: 0, lose: 0, isActive: true },
+      { id: 4, name: 'D', mmr: 100, win: 0, lose: 0, isActive: true },
+      { id: 5, name: 'E (ไม่มา)', mmr: 100, win: 0, lose: 0, isActive: false },
+      { id: 6, name: 'F (ไม่มา)', mmr: 100, win: 0, lose: 0, isActive: false },
     ];
   });
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -40,7 +34,7 @@ export default function App() {
   // 3. STATES: ระบบประวัติการแข่งขันย้อนหลัง
   // ==========================================
   const [matchHistory, setMatchHistory] = useState(() => {
-    const localHistory = localStorage.getItem('badminton_history_v3');
+    const localHistory = localStorage.getItem('badminton_history_v4');
     return localHistory ? JSON.parse(localHistory) : [];
   });
 
@@ -49,10 +43,10 @@ export default function App() {
   // ==========================================
   const [calcFees, setCalcFees] = useState({ court: 120, shuttlecock: 0 });
   const [calcPlayers, setCalcPlayers] = useState([
-    { id: 1, name: 'คิม', joinTime: '19:00', leaveTime: '21:00' },
-    { id: 2, name: 'พี่หญิง', joinTime: '19:00', leaveTime: '21:00' },
-    { id: 3, name: 'พี่นก', joinTime: '19:00', leaveTime: '21:00' },
-    { id: 4, name: 'น้องมาย', joinTime: '19:00', leaveTime: '21:00' }
+    { id: 1, name: 'A', joinTime: '19:00', leaveTime: '21:00' },
+    { id: 2, name: 'B', joinTime: '19:00', leaveTime: '21:00' },
+    { id: 3, name: 'C', joinTime: '19:00', leaveTime: '21:00' },
+    { id: 4, name: 'D', joinTime: '19:00', leaveTime: '21:00' }
   ]);
   const [calcResults, setCalcResults] = useState([]);
 
@@ -60,11 +54,11 @@ export default function App() {
   // 5. EFFECTS: ระบบบันทึกข้อมูลอัตโนมัติ
   // ==========================================
   useEffect(() => {
-    localStorage.setItem('badminton_players_v3', JSON.stringify(players));
+    localStorage.setItem('badminton_players_v4', JSON.stringify(players));
   }, [players]);
 
   useEffect(() => {
-    localStorage.setItem('badminton_history_v3', JSON.stringify(matchHistory));
+    localStorage.setItem('badminton_history_v4', JSON.stringify(matchHistory));
   }, [matchHistory]);
 
   // ฟังก์ชันดึง MMR ล่าสุดเสมอ
@@ -74,10 +68,13 @@ export default function App() {
   // 6. FUNCTIONS: Matchmaking Logic & Winner Stays
   // ==========================================
   const handleStartSession = () => {
-    if (players.length < 4) return alert('ต้องมีผู้เล่นอย่างน้อย 4 คนในรายชื่อ จึงจะเริ่มแข่งได้ครับ');
+    // กรองเอาเฉพาะคนที่ติ๊กว่า "มาเล่น/พร้อมลงสนาม (isActive: true)" เท่านั้น
+    const activePlayers = players.filter(p => p.isActive);
+
+    if (activePlayers.length < 4) return alert('ต้องมีผู้เล่นที่ติ๊กสถานะ "พร้อมลงสนาม" อย่างน้อย 4 คนขึ้นไปครับ');
     
-    // เรียงลำดับตามฝีมือ MMR จากมากไปน้อย
-    const sorted = [...players].sort((a, b) => b.mmr - a.mmr);
+    // เรียงลำดับตามฝีมือ MMR จากมากไปน้อย (เฉพาะคนที่มา)
+    const sorted = [...activePlayers].sort((a, b) => b.mmr - a.mmr);
     
     // จับคู่แบบไขว้ (1 คู่กับ 4, 2 คู่กับ 3 เพื่อความสูสีในแต่ละกลุ่ม 4 คน)
     const pairs = [];
@@ -218,16 +215,23 @@ export default function App() {
   // ==========================================
   const addPlayer = () => {
     if (!newPlayerName) return;
-    if (players.length >= 16) return alert('รายชื่อเต็ม 16 คนแล้วครับ');
     if (players.some(p => p.name.trim() === newPlayerName.trim())) return alert('ชื่อนี้มีอยู่ในระบบแล้วครับ');
     
-    const newP = { id: Date.now(), name: newPlayerName.trim(), mmr: 100, win: 0, lose: 0 };
+    // ผู้เล่นใหม่ถูกเพิ่ม และตั้งค่าสถานะ isActive: true (พร้อมลงสนาม) อัตโนมัติ
+    const newP = { id: Date.now(), name: newPlayerName.trim(), mmr: 100, win: 0, lose: 0, isActive: true };
     setPlayers([...players, newP]);
     setNewPlayerName('');
   };
 
+  const togglePlayerActive = (id) => {
+    setPlayers(players.map(p => {
+      if (p.id === id) return { ...p, isActive: !p.isActive };
+      return p;
+    }));
+  };
+
   const removePlayer = (id) => {
-    if (window.confirm('คุณต้องการลบผู้เล่นคนนี้ออกใช่หรือไม่?')) {
+    if (window.confirm('คุณต้องการลบผู้เล่นคนนี้ออก "อย่างถาวร" ใช่หรือไม่?\n(คำแนะนำ: หากแค่วันนี้เขาไม่ได้มาเล่น ให้กดติ๊กถูกด้านหน้าชื่อออกแทนการลบ เพื่อรักษา MMR ไว้)')) {
       setPlayers(players.filter(p => p.id !== id));
     }
   };
@@ -240,7 +244,7 @@ export default function App() {
 
   const resetRoster = () => {
     if (window.confirm('⚠️ คุณต้องการรีเซ็ตสถิติผู้เล่นกลับเป็นค่าเริ่มต้นทั้งหมดใช่หรือไม่?')) {
-      localStorage.removeItem('badminton_players_v3');
+      localStorage.removeItem('badminton_players_v4');
       window.location.reload();
     }
   };
@@ -303,15 +307,18 @@ export default function App() {
   };
 
   const importRosterToCalculator = () => {
-    if (players.length === 0) return alert('ไม่มีผู้เล่นในบอร์ด Roster สำหรับดึงข้อมูลครับ');
-    const imported = players.map(p => ({
+    // ดึงเฉพาะคนที่มาร่วมเล่น (isActive === true) ลงมาคำนวณเงิน
+    const activePlayers = players.filter(p => p.isActive);
+    if (activePlayers.length === 0) return alert('ไม่มีผู้เล่นที่ตั้งสถานะพร้อมลงสนาม สำหรับดึงข้อมูลครับ');
+    
+    const imported = activePlayers.map(p => ({
       id: p.id,
       name: p.name,
       joinTime: '19:00',
       leaveTime: '21:00'
     }));
     setCalcPlayers(imported);
-    alert(`⚡ ดึงรายชื่อผู้เล่นจำนวน ${players.length} คนลงมายังระบบคิดเงินเรียบร้อย!`);
+    alert(`⚡ ดึงรายชื่อผู้เล่นจำนวน ${activePlayers.length} คนลงมายังระบบคิดเงินเรียบร้อย!`);
   };
 
   // ==========================================
@@ -363,7 +370,7 @@ export default function App() {
               </h1>
               <div className="flex items-center gap-4">
                 <span className="bg-indigo-100 text-indigo-800 text-sm font-bold px-3 py-1 rounded-full">
-                  ผู้เล่นทั้งหมด: {players.length}/16
+                  พร้อมลงสนาม: {players.filter(p=>p.isActive).length} / {players.length} คน
                 </span>
                 <button onClick={resetRoster} className="text-xs text-red-500 hover:text-red-700 font-semibold underline">
                   รีเซ็ตข้อมูลทั้งหมด
@@ -376,7 +383,7 @@ export default function App() {
               {/* === รายชื่อผู้เล่น (ซ้าย) === */}
               <div className="md:col-span-4 lg:col-span-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 h-fit">
                 <h2 className="font-bold text-slate-700 mb-4 flex items-center">
-                  <Users className="w-5 h-5 mr-2 text-indigo-500"/> รายชื่อผู้เล่นบอร์ดหลัก
+                  <Users className="w-5 h-5 mr-2 text-indigo-500"/> รายชื่อผู้เล่นทั้งหมด (Database)
                 </h2>
                 
                 <div className="flex gap-2 mb-6">
@@ -384,7 +391,7 @@ export default function App() {
                     value={newPlayerName} 
                     onChange={(e) => setNewPlayerName(e.target.value)} 
                     onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
-                    placeholder="เพิ่มชื่อ..." 
+                    placeholder="เพิ่มชื่อผู้เล่นใหม่..." 
                     className="flex-1 border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm" 
                   />
                   <button onClick={addPlayer} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg transition-colors flex items-center">
@@ -396,13 +403,20 @@ export default function App() {
                   {players.length === 0 && <p className="text-center text-slate-400 py-4">ยังไม่มีผู้เล่น</p>}
                   
                   {players.sort((a,b) => b.mmr - a.mmr).map((p, index) => (
-                    <div key={p.id} className="flex justify-between items-center p-2.5 bg-slate-50 border border-slate-100 rounded-xl hover:border-indigo-200 transition-colors group">
+                    <div key={p.id} className={`flex justify-between items-center p-2.5 rounded-xl transition-colors group border ${p.isActive ? 'bg-slate-50 border-slate-200 shadow-sm' : 'bg-slate-100 border-slate-100 opacity-60'}`}>
                       <div className="flex items-center gap-3">
-                        <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
-                          {index + 1}
-                        </div>
+                        <button 
+                          onClick={() => togglePlayerActive(p.id)}
+                          className="focus:outline-none flex-shrink-0"
+                          title={p.isActive ? "พร้อมลงสนาม" : "ไม่ได้มา / พัก"}
+                        >
+                          {p.isActive 
+                            ? <CheckSquare className="text-emerald-500 w-5 h-5 hover:text-emerald-600" /> 
+                            : <Square className="text-slate-400 w-5 h-5 hover:text-slate-500" />
+                          }
+                        </button>
                         <div>
-                          <p className="font-bold text-slate-700 text-sm">{p.name}</p>
+                          <p className={`text-sm ${p.isActive ? 'font-bold text-slate-700' : 'font-medium text-slate-500 line-through'}`}>{p.name}</p>
                           <p className="text-[10px] text-slate-500">ชนะ {p.win} | แพ้ {p.lose}</p>
                         </div>
                       </div>
@@ -410,7 +424,7 @@ export default function App() {
                         <span className="text-xs font-bold bg-white border border-slate-200 px-1.5 py-0.5 rounded text-indigo-600 shadow-sm">
                           {p.mmr}
                         </span>
-                        <button onClick={() => removePlayer(p.id)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => removePlayer(p.id)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity" title="ลบออกจากระบบถาวร">
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -437,6 +451,7 @@ export default function App() {
                         <option value={2}>2 สนาม (รองรับสูงสุด 8 คน)</option>
                         <option value={3}>3 สนาม (รองรับสูงสุด 12 คน)</option>
                         <option value={4}>4 สนาม (รองรับสูงสุด 16 คน)</option>
+                        <option value={5}>5 สนาม (รองรับสูงสุด 20 คน)</option>
                       </select>
                     </div>
                     <div className="flex-1">
@@ -477,7 +492,7 @@ export default function App() {
                    <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-12 rounded-2xl flex flex-col items-center justify-center text-center text-slate-400">
                      <Swords className="w-16 h-16 mb-4 opacity-50" />
                      <p className="font-bold text-lg text-slate-500">ยังไม่มีการแข่งขัน</p>
-                     <p className="text-sm mt-2">โปรดเลือกจำนวนสนาม โหมดการเล่น และกด "เริ่มเซสชัน"</p>
+                     <p className="text-sm mt-2">ติ๊กเลือกคนที่พร้อมแข่งด้านซ้าย เลือกระบบสนาม แล้วกด "เริ่มเซสชัน"</p>
                    </div>
                 ) : (
                   <div className="bg-indigo-900 rounded-2xl shadow-lg p-5 relative overflow-hidden animate-in zoom-in-95 duration-300">
@@ -682,7 +697,7 @@ export default function App() {
                 onClick={importRosterToCalculator}
                 className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-3 py-2 rounded-lg transition-colors flex items-center gap-1 border border-indigo-200"
               >
-                <Users size={14}/> ดึงรายชื่อจากระบบจับคู่ ({players.length} คน)
+                <Users size={14}/> ดึงรายชื่อคนที่พร้อมเล่นลงมาคิดเงิน ({players.filter(p=>p.isActive).length} คน)
               </button>
             </div>
             
