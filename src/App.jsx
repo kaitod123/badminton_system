@@ -221,7 +221,7 @@ export default function App() {
     if (players.length >= 16) return alert('รายชื่อเต็ม 16 คนแล้วครับ');
     if (players.some(p => p.name.trim() === newPlayerName.trim())) return alert('ชื่อนี้มีอยู่ในระบบแล้วครับ');
     
-    const newP = { id: Date.now(), name: newPlayerName.trim(), mmr: 1200, win: 0, lose: 0 };
+    const newP = { id: Date.now(), name: newPlayerName.trim(), mmr: 100, win: 0, lose: 0 };
     setPlayers([...players, newP]);
     setNewPlayerName('');
   };
