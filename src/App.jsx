@@ -71,7 +71,7 @@ export default function App() {
     // กรองเอาเฉพาะคนที่ติ๊กว่า "มาเล่น/พร้อมลงสนาม (isActive: true)" เท่านั้น
     const activePlayers = players.filter(p => p.isActive);
 
-    if (activePlayers.length < 4) return alert('ต้องมีผู้เล่นที่ติ๊กสถานะ "พร้อมลงสนาม" อย่างน้อย 4 คนขึ้นไปครับ');
+    if (activePlayers.length < 4) return alert('ต้องมีผู้เล่นที่ติ๊กสถานะ "พร้อมลงสนาม" อย่างน้อย 4 คนขึ้นไปนะครับ');
     
     // เรียงลำดับตามฝีมือ MMR จากมากไปน้อย (เฉพาะคนที่มา)
     const sorted = [...activePlayers].sort((a, b) => b.mmr - a.mmr);
