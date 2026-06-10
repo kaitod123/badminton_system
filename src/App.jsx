@@ -17,8 +17,6 @@ export default function App() {
       { id: 2, name: 'B', mmr: 100, win: 0, lose: 0, isActive: true },
       { id: 3, name: 'C', mmr: 100, win: 0, lose: 0, isActive: true },
       { id: 4, name: 'D', mmr: 100, win: 0, lose: 0, isActive: true },
-      { id: 5, name: 'E (ไม่มา)', mmr: 100, win: 0, lose: 0, isActive: false },
-      { id: 6, name: 'F (ไม่มา)', mmr: 100, win: 0, lose: 0, isActive: false },
     ];
   });
   const [newPlayerName, setNewPlayerName] = useState('');
