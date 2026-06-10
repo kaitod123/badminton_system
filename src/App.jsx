@@ -202,7 +202,7 @@ export default function App() {
   };
 
   const endSession = () => {
-    if (window.confirm('ยุติเซสชันการแข่งปัจจุบันใช่หรือไม่?')) {
+    if (window.confirm('ปิดเซสชันการแข่งปัจจุบันใช่หรือไม่?')) {
       setMatchSession(null);
     }
   }
