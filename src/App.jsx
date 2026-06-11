@@ -10,7 +10,7 @@ import {
 // 0. API CONFIG (เชื่อมต่อ Aiven Postgres ผ่าน server.js)
 // ==========================================
 // ⚠️ นำลิงก์ Web Service ที่ได้จาก Render มาใส่ตรงนี้ (อย่าลืมเติม /api ต่อท้าย)
-const API_BASE_URL = 'https://badminton-system-hpkd.onrender.com/api'; 
+const API_BASE_URL = '/api';
 
 export default function App() {
   // ==========================================

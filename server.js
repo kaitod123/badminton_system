@@ -1,6 +1,12 @@
 import express from 'express';
 import pg from 'pg';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// สร้างตัวแปรพาธสำหรับ ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const { Pool } = pg;
 const app = express();
@@ -15,7 +21,7 @@ const pool = new Pool({
 // สร้างตารางเก็บข้อมูลแอปอัตโนมัติ (ถ้ายังไม่มี)
 pool.query(`CREATE TABLE IF NOT EXISTS "AppData" (id INT PRIMARY KEY, data JSONB)`);
 
-// Endpoint ดึงข้อมูล (โหลดไปโชว์ที่เครื่องผู้ใช้) - เส้นทางนี้คือที่ React เรียกหา!
+// Endpoint ดึงและรับข้อมูล API
 app.get('/api/sync', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT data FROM "AppData" WHERE id = 1');
@@ -25,7 +31,6 @@ app.get('/api/sync', async (req, res) => {
   }
 });
 
-// Endpoint รับข้อมูล (เวลามีกดเพิ่มคน/ใส่คะแนน) - เส้นทางนี้คือที่ React เรียกหา!
 app.post('/api/sync', async (req, res) => {
   try {
     const jsonData = req.body;
@@ -39,6 +44,13 @@ app.post('/api/sync', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ==== ส่วนที่เพิ่มมาใหม่: เสิร์ฟหน้าเว็บ React จาก Backend เลย ====
+app.use(express.static(path.join(__dirname, 'dist')));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+// ==========================================================
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
