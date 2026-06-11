@@ -12,10 +12,29 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-app.get('/api/players', async (req, res) => {
+// สร้างตารางเก็บข้อมูลแอปอัตโนมัติ (ถ้ายังไม่มี)
+pool.query(`CREATE TABLE IF NOT EXISTS "AppData" (id INT PRIMARY KEY, data JSONB)`);
+
+// Endpoint ดึงข้อมูล (โหลดไปโชว์ที่เครื่องผู้ใช้)
+app.get('/api/sync', async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM "Users"');
-    res.json(rows);
+    const { rows } = await pool.query('SELECT data FROM "AppData" WHERE id = 1');
+    res.json(rows[0] ? rows[0].data : {});
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint รับข้อมูล (เวลามีกดเพิ่มคน/ใส่คะแนน)
+app.post('/api/sync', async (req, res) => {
+  try {
+    const jsonData = req.body;
+    await pool.query(
+      `INSERT INTO "AppData" (id, data) VALUES (1, $1) 
+       ON CONFLICT (id) DO UPDATE SET data = $1`,
+      [jsonData]
+    );
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

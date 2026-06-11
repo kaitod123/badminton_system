@@ -1,139 +1,131 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Users, UserPlus, RefreshCw, Trophy, DollarSign, Swords, 
   Clock, Trash2, History, Settings, Play, StopCircle, 
   CheckCircle2, Circle, ChevronRight, Activity, Award,
-  Menu, X
+  Menu, X, Wifi, WifiOff
 } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 
 // ==========================================
-// 0. FIREBASE REAL-TIME DATABASE INIT
+// 0. API CONFIG (เชื่อมต่อ Aiven Postgres ผ่าน server.js)
 // ==========================================
-let app, auth, db, appId;
-try {
-  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-  if (firebaseConfig) {
-    app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-    appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-  }
-} catch (e) {
-  console.error("Database init error", e);
-}
+// ⚠️ นำลิงก์ Web Service ที่ได้จาก Render มาใส่ตรงนี้ (อย่าลืมเติม /api ต่อท้าย)
+const API_BASE_URL = 'https://badminton-system-hpkd.onrender.com/api'; 
 
 export default function App() {
   // ==========================================
-  // 1. STATES: ระบบนำทาง (Navigation) & Auth
+  // 1. STATES: ระบบนำทาง (Navigation) & Connection
   // ==========================================
   const [activeTab, setActiveTab] = useState('matchmaking');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [dbStatus, setDbStatus] = useState('checking'); // 'checking', 'online', 'offline'
 
   // ==========================================
-  // 2. STATES: ระบบข้อมูล Real-time
+  // 2. STATES: ระบบข้อมูลหลัก (มี LocalStorage เป็น Fallback หากออฟไลน์)
   // ==========================================
-  const [players, setPlayers] = useState([]);
-  const [matchHistory, setMatchHistory] = useState([]);
-  const [matchSession, setMatchSession] = useState(null);
+  const [players, setPlayers] = useState(() => {
+    const localData = localStorage.getItem('badminton_players_v7');
+    return localData ? JSON.parse(localData) : [
+      { id: '1', name: 'A', mmr: 100, win: 0, lose: 0, isActive: true },
+      { id: '2', name: 'B', mmr: 100, win: 0, lose: 0, isActive: true },
+      { id: '3', name: 'C', mmr: 100, win: 0, lose: 0, isActive: true },
+      { id: '4', name: 'D', mmr: 100, win: 0, lose: 0, isActive: true },
+    ];
+  });
+  const [newPlayerName, setNewPlayerName] = useState('');
   
   const [numCourts, setNumCourts] = useState(2);
   const [matchMode, setMatchMode] = useState('winner_stays');
+  
+  const [matchSession, setMatchSession] = useState(() => {
+    const local = localStorage.getItem('badminton_session_v7');
+    return local ? JSON.parse(local) : null;
+  });
+
+  const [matchHistory, setMatchHistory] = useState(() => {
+    const local = localStorage.getItem('badminton_history_v7');
+    return local ? JSON.parse(local) : [];
+  });
 
   // ==========================================
-  // 3. STATES: ระบบคำนวณค่าสนาม (ทำงานออฟไลน์ในเครื่องแต่ละคน)
+  // 3. STATES: ระบบคำนวณค่าสนาม (ทำงานบนเครื่องอย่างเดียว)
   // ==========================================
   const [calcFees, setCalcFees] = useState({ court: 120, shuttlecock: 0 });
   const [calcPlayers, setCalcPlayers] = useState([]);
   const [calcResults, setCalcResults] = useState([]);
 
   // ==========================================
-  // 4. EFFECTS: Database Connection & Listeners
+  // 4. API SYNC FUNCTIONS (หัวใจของระบบ Real-time)
   // ==========================================
-  useEffect(() => {
-    if (!auth) return;
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.error('Auth error', err);
+  
+  // 4.1 ฟังก์ชันดึงข้อมูลจาก Aiven
+  const fetchFromServer = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/sync`);
+      if (res.ok) {
+        const data = await res.json();
+        // อัปเดตข้อมูลจากเซิร์ฟเวอร์ ถ้ามีข้อมูล
+        if (data.players) setPlayers(data.players);
+        if (data.history) setMatchHistory(data.history);
+        if (data.session !== undefined) setMatchSession(data.session);
+        
+        setDbStatus('online');
+      } else {
+        setDbStatus('offline');
       }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
+    } catch (error) {
+      setDbStatus('offline');
+    }
   }, []);
 
+  // 4.2 Polling: ให้ยิงตรวจข้อมูลทุกๆ 3 วินาที (เพื่อให้หน้าจอทุกคนตรงกัน)
   useEffect(() => {
-    if (!user || !db) return;
+    fetchFromServer();
+    const interval = setInterval(fetchFromServer, 3000);
+    return () => clearInterval(interval);
+  }, [fetchFromServer]);
 
-    const playersRef = collection(db, 'artifacts', appId, 'public', 'data', 'players');
-    const historyRef = collection(db, 'artifacts', appId, 'public', 'data', 'history');
-    const sessionRef = collection(db, 'artifacts', appId, 'public', 'data', 'session');
+  // 4.3 ฟังก์ชันรับผิดชอบการเซฟข้อมูลทั้งหมด (อัปเดต UI ทันที แล้วยิงไปเซิร์ฟเวอร์ทีหลัง)
+  const updateGlobalState = async (newPlayers, newHistory, newSession) => {
+    // อัปเดตหน้าจอทันที ไม่ต้องรอเน็ต
+    if (newPlayers) setPlayers(newPlayers);
+    if (newHistory) setMatchHistory(newHistory);
+    if (newSession !== undefined) setMatchSession(newSession);
 
-    // Listener สำหรับข้อมูลผู้เล่น
-    const unsubPlayers = onSnapshot(playersRef, (snap) => {
-      const p = [];
-      snap.forEach(d => p.push(d.data()));
-      
-      // ถ้าระบบยังว่างเปล่า ให้ใส่ข้อมูลเริ่มต้น
-      if (p.length === 0 && isLoading) {
-        const defaults = [
-          { id: '1', name: 'A', mmr: 100, win: 0, lose: 0, isActive: true },
-          { id: '2', name: 'B', mmr: 100, win: 0, lose: 0, isActive: true },
-          { id: '3', name: 'C', mmr: 100, win: 0, lose: 0, isActive: true },
-          { id: '4', name: 'D', mmr: 100, win: 0, lose: 0, isActive: true },
-          { id: '5', name: 'E', mmr: 100, win: 0, lose: 0, isActive: true },
-          { id: '6', name: 'F', mmr: 100, win: 0, lose: 0, isActive: true },
-          { id: '7', name: 'G', mmr: 100, win: 0, lose: 0, isActive: true },
-          { id: '8', name: 'H', mmr: 100, win: 0, lose: 0, isActive: true },
-        ];
-        const batch = writeBatch(db);
-        defaults.forEach(d => batch.set(doc(playersRef, d.id), d));
-        batch.commit().then(() => setIsLoading(false));
-      } else {
-        setPlayers(p);
-        setIsLoading(false);
+    // เก็บความจำสำรองลงเครื่อง (Fallback)
+    if (newPlayers) localStorage.setItem('badminton_players_v7', JSON.stringify(newPlayers));
+    if (newHistory) localStorage.setItem('badminton_history_v7', JSON.stringify(newHistory));
+    if (newSession !== undefined) localStorage.setItem('badminton_session_v7', JSON.stringify(newSession));
+
+    // พยายามยิงอัปเดตฐานข้อมูล Aiven
+    if (dbStatus === 'online') {
+      try {
+        await fetch(`${API_BASE_URL}/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            players: newPlayers || players,
+            history: newHistory || matchHistory,
+            session: newSession !== undefined ? newSession : matchSession
+          })
+        });
+      } catch (e) {
+        console.error("Failed to push update to Aiven");
       }
-    }, console.error);
+    }
+  };
 
-    // Listener สำหรับข้อมูลประวัติ
-    const unsubHistory = onSnapshot(historyRef, (snap) => {
-      const h = [];
-      snap.forEach(d => h.push({ docId: d.id, ...d.data() }));
-      setMatchHistory(h.sort((a,b) => b.timestamp - a.timestamp));
-    }, console.error);
-
-    // Listener สำหรับกระดานแข่งขัน
-    const unsubSession = onSnapshot(sessionRef, (snap) => {
-      let active = null;
-      snap.forEach(d => { if (d.id === 'current') active = d.data(); });
-      setMatchSession(active);
-    }, console.error);
-
-    return () => { unsubPlayers(); unsubHistory(); unsubSession(); };
-  }, [user]);
-
-  const getPlayerLatest = (id) => players.find(p => p.id === String(id) || p.id === id) || { mmr: 0, name: 'Unknown' };
+  const getPlayerLatest = (id) => players.find(p => p.id === String(id)) || { mmr: 0, name: 'Unknown' };
 
   // ==========================================
-  // 5. FUNCTIONS: Matchmaking & Database Sync
+  // 5. FUNCTIONS: Matchmaking Logic 
   // ==========================================
-  const handleStartSession = async () => {
+  const handleStartSession = () => {
     const activePlayers = players.filter(p => p.isActive);
 
     if (activePlayers.length < 4) return alert('ต้องมีผู้เล่นที่ "พร้อมลงสนาม" อย่างน้อย 4 คนขึ้นไปครับ');
     
-    // สุ่มคนที่จะได้เล่นเพื่อกระจายคนเป็นเศษ
+    // สุ่มและจัดเข้าข่าย (Snake Draft)
     const shuffledActive = [...activePlayers].sort(() => Math.random() - 0.5);
     const numToPlay = Math.min(
       shuffledActive.length - (shuffledActive.length % 4),
@@ -149,16 +141,12 @@ export default function App() {
 
     const pairs = [];
     const half = selectedToPlay.length / 2;
-    
-    // Snake Draft
     for (let i = 0; i < half; i++) {
       pairs.push([selectedToPlay[i], selectedToPlay[selectedToPlay.length - 1 - i]]);
     }
     
     const courts = [];
     const actualCourts = pairs.length / 2;
-    
-    // Cross-Match Teams
     for (let i = 0; i < actualCourts; i++) {
       courts.push({
         id: i + 1,
@@ -182,14 +170,11 @@ export default function App() {
       round: 1
     };
 
-    // เขียนลงฐานข้อมูล
-    if (db && user) {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'session', 'current'), newSession);
-    }
+    updateGlobalState(null, null, newSession);
   };
 
-  const recordResult = async (courtId, winnerTeamIndex) => {
-    if (!matchSession || !db || !user) return;
+  const recordResult = (courtId, winnerTeamIndex) => {
+    if (!matchSession) return;
 
     const targetCourt = matchSession.courts.find(c => c.id === courtId);
     if (!targetCourt) return;
@@ -211,7 +196,6 @@ export default function App() {
 
        if (loseAvg > winAvg + 10) gain += 3; 
        else if (winAvg > loseAvg + 10) gain -= 3;
-
        if (pMmr < partnerMmr - 10) gain += 2;
        else if (pMmr > partnerMmr + 10) gain -= 2;
 
@@ -226,35 +210,27 @@ export default function App() {
 
        if (loseAvg > winAvg + 10) drop += 3;
        else if (winAvg > loseAvg + 10) drop -= 3;
-
        if (pMmr > partnerMmr + 10) drop -= 2;
        else if (pMmr < partnerMmr - 10) drop += 2;
 
        mmrChanges[p.id] = -drop;
     });
 
-    // เริ่ม Batch Update ไปที่ Cloud
-    const batch = writeBatch(db);
-
-    // 1. อัปเดต MMR ผู้ชนะ
-    winningTeam.forEach(p => {
-      const pObj = players.find(x => x.id === p.id);
-      if (pObj) {
-        const newObj = { ...pObj, win: pObj.win + 1, mmr: Math.max(10, pObj.mmr + mmrChanges[p.id]) };
-        batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(p.id)), newObj);
+    // อัปเดต MMR
+    const updatedPlayers = players.map(p => {
+      if (mmrChanges[p.id] !== undefined) {
+         const change = mmrChanges[p.id];
+         return {
+           ...p,
+           win: change > 0 ? p.win + 1 : p.win,
+           lose: change < 0 ? p.lose + 1 : p.lose,
+           mmr: Math.max(10, p.mmr + change)
+         };
       }
-    });
-
-    // 2. อัปเดต MMR ผู้แพ้
-    losingTeam.forEach(p => {
-      const pObj = players.find(x => x.id === p.id);
-      if (pObj) {
-        const newObj = { ...pObj, lose: pObj.lose + 1, mmr: Math.max(10, pObj.mmr + mmrChanges[p.id]) };
-        batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(p.id)), newObj);
-      }
+      return p;
     });
     
-    // 3. บันทึกประวัติ
+    // บันทึกประวัติ
     const historyId = `M${Date.now().toString().slice(-4)}-C${courtId}`;
     const newRecord = {
       id: historyId,
@@ -265,9 +241,10 @@ export default function App() {
       winnerLabel: winnerTeamIndex === 1 ? 'TEAM A' : 'TEAM B',
       matchDetails: `สนามที่ ${courtId} • ${matchSession.mode === 'winner_stays' ? 'แชมป์อยู่ต่อ' : 'สลับคู่'}`
     };
-    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'history', historyId), newRecord);
+    
+    const newHistory = [newRecord, ...matchHistory];
 
-    // 4. อัปเดตกระดาน
+    // อัปเดตกระดานเซสชัน
     const nextState = { ...matchSession, waitingPairs: [...matchSession.waitingPairs] };
     const cIdx = nextState.courts.findIndex(c => c.id === courtId);
 
@@ -297,79 +274,62 @@ export default function App() {
       nextState.courts[cIdx].winnerIndex = winnerTeamIndex;
     }
 
-    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'session', 'current'), nextState);
-
-    await batch.commit();
+    // สั่งเซฟขึ้นเซิร์ฟเวอร์ทีเดียว
+    updateGlobalState(updatedPlayers, newHistory, nextState);
   };
 
-  const endSession = async () => {
+  const endSession = () => {
     if (window.confirm('ยืนยันการปิดเซสชันการแข่งปัจจุบัน?')) {
-      if (db && user) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'session', 'current'));
+      updateGlobalState(null, null, null);
     }
   }
 
   const isAllCourtsFinished = matchSession && matchSession.mode === 'balanced' && matchSession.courts.every(c => c.finished);
 
   // ==========================================
-  // 6. FUNCTIONS: Database Player Management
+  // 6. FUNCTIONS: Player Management
   // ==========================================
-  const addPlayer = async () => {
-    if (!newPlayerName || !db || !user) return;
+  const addPlayer = () => {
+    if (!newPlayerName) return;
     if (players.some(p => p.name.trim().toLowerCase() === newPlayerName.trim().toLowerCase())) return alert('ชื่อนี้มีอยู่ในระบบแล้วครับ');
     
     const newId = Date.now().toString();
     const newP = { id: newId, name: newPlayerName.trim(), mmr: 100, win: 0, lose: 0, isActive: true };
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'players', newId), newP);
+    
+    updateGlobalState([...players, newP], null, undefined);
     setNewPlayerName('');
   };
 
-  const togglePlayerActive = async (id) => {
-    if (!db || !user) return;
-    const p = players.find(x => x.id === String(id) || x.id === id);
-    if (p) {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(p.id)), { ...p, isActive: !p.isActive });
-    }
+  const togglePlayerActive = (id) => {
+    const updatedPlayers = players.map(p => p.id === String(id) ? { ...p, isActive: !p.isActive } : p);
+    updateGlobalState(updatedPlayers, null, undefined);
   };
 
-  const removePlayer = async (id) => {
-    if (!db || !user) return;
+  const removePlayer = (id) => {
     if (window.confirm('ลบผู้เล่นคนนี้ออกจากระบบถาวรใช่หรือไม่?')) {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(id)));
+      const updatedPlayers = players.filter(p => p.id !== String(id));
+      updateGlobalState(updatedPlayers, null, undefined);
     }
   };
 
-  const clearHistory = async () => {
-    if (!db || !user) return;
+  const clearHistory = () => {
     if (window.confirm('⚠️ ลบประวัติทั้งหมดถาวร ใช่หรือไม่?')) {
-      const batch = writeBatch(db);
-      matchHistory.forEach(h => {
-         batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'history', String(h.docId)));
-      });
-      await batch.commit();
+      updateGlobalState(null, [], undefined);
     }
   };
 
-  const resetRoster = async () => {
-    if (!db || !user) return;
+  const resetRoster = () => {
     if (window.confirm('⚠️ รีเซ็ตข้อมูลผู้เล่นกลับเป็นค่าเริ่มต้นทั้งหมด ใช่หรือไม่?')) {
-      const batch = writeBatch(db);
-      players.forEach(p => {
-         batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(p.id)));
-      });
-      
       const defaults = [
         { id: '1', name: 'A', mmr: 100, win: 0, lose: 0, isActive: true },
         { id: '2', name: 'B', mmr: 100, win: 0, lose: 0, isActive: true },
       ];
-      defaults.forEach(d => {
-         batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(d.id)), d);
-      });
-      await batch.commit();
+      updateGlobalState(defaults, [], null);
     }
   };
 
   // ==========================================
-  // 7. FUNCTIONS: Calculator Logic (Local Only)
+  // 7. FUNCTIONS: Calculator Logic (ทำงานในเครื่องอย่างเดียว ไม่ซิงค์ออนไลน์)
   // ==========================================
   const calculateDynamicFees = () => {
     const totalExpenses = Number(calcFees.court) + Number(calcFees.shuttlecock);
@@ -406,9 +366,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (activeTab === 'calculator') {
-      calculateDynamicFees();
-    }
+    if (activeTab === 'calculator') calculateDynamicFees();
   }, [calcFees, calcPlayers, activeTab]);
 
   const updateCalcPlayerTime = (index, field, value) => {
@@ -441,17 +399,6 @@ export default function App() {
   // ==========================================
   // 8. REUSABLE COMPONENTS & UI RENDER
   // ==========================================
-  if (!user || isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
-        <div className="flex flex-col items-center gap-4">
-          <RefreshCw className="w-10 h-10 text-indigo-600 animate-spin" />
-          <p className="font-bold text-slate-500">กำลังเชื่อมต่อฐานข้อมูลแบบเรียลไทม์...</p>
-        </div>
-      </div>
-    );
-  }
-
   const TabButton = ({ id, icon: Icon, label }) => (
     <button 
       onClick={() => setActiveTab(id)}
@@ -500,9 +447,9 @@ export default function App() {
             </div>
             <div>
               <h2 className="text-lg font-black text-slate-800 tracking-tight">Badminton Pro</h2>
-              <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Online Manager
+              <p className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${dbStatus === 'online' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {dbStatus === 'online' ? <Wifi size={12}/> : <WifiOff size={12}/>}
+                {dbStatus === 'online' ? 'Aiven Connected' : 'Offline Mode'}
               </p>
             </div>
           </div>
@@ -522,7 +469,7 @@ export default function App() {
         </div>
         
         <div className="p-6 border-t border-slate-100 bg-slate-50/50 text-center">
-           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Version 7.0 Cloud Sync</p>
+           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Version 8.0 Aiven Polling</p>
         </div>
       </div>
 
@@ -543,13 +490,13 @@ export default function App() {
               <div className="flex items-center gap-2 sm:gap-3">
                 <div className="bg-gradient-to-br from-indigo-600 to-violet-600 text-white p-2 sm:p-2.5 rounded-xl sm:rounded-2xl shadow-indigo-500/30 shadow-lg relative">
                   <Swords size={20} className="sm:w-6 sm:h-6" />
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 border-2 border-white rounded-full"></div>
+                  <div className={`absolute -top-1 -right-1 w-3 h-3 border-2 border-white rounded-full ${dbStatus === 'online' ? 'bg-emerald-400' : 'bg-rose-400'}`}></div>
                 </div>
                 <div>
                   <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-indigo-900 to-slate-800 bg-clip-text text-transparent">Badminton Pro</h1>
-                  <p className="hidden sm:flex text-[10px] sm:text-[11px] font-bold text-emerald-500 uppercase tracking-wider items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Online Synced
+                  <p className={`hidden sm:flex text-[10px] sm:text-[11px] font-bold uppercase tracking-wider items-center gap-1.5 ${dbStatus === 'online' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${dbStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
+                    {dbStatus === 'checking' ? 'Connecting DB...' : (dbStatus === 'online' ? 'Aiven Connected' : 'Offline Mode')}
                   </p>
                 </div>
               </div>
@@ -565,6 +512,13 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* --- WARNING BANNER (Offline) --- */}
+      {dbStatus === 'offline' && (
+        <div className="bg-rose-50 border-b border-rose-200 px-4 py-2 text-center text-rose-600 text-xs sm:text-sm font-bold flex items-center justify-center gap-2">
+          <WifiOff size={16} /> กำลังใช้งานโหมดความจำในเครื่องชั่วคราว (หาเซิร์ฟเวอร์ Aiven ไม่เจอ)
+        </div>
+      )}
 
       <main className="max-w-6xl mx-auto mt-4 sm:mt-6 px-4 lg:px-8">
         
@@ -885,7 +839,7 @@ export default function App() {
                         <span className="text-[11px] sm:text-xs text-slate-400 text-right md:text-left self-end md:self-auto md:mt-1">{match.matchDetails}</span>
                       </div>
                       
-                      {/* Teams & Score (Individual MMR Display) */}
+                      {/* Teams & Score */}
                       <div className="flex-1 grid grid-cols-2 gap-3 sm:gap-4 items-center relative">
                         {/* Winner */}
                         <div className="bg-emerald-50/50 p-2.5 sm:p-3 rounded-xl border border-emerald-100 relative">
@@ -1044,7 +998,7 @@ export default function App() {
                     <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 shadow-sm h-full flex flex-col">
                       <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50 rounded-t-2xl sm:rounded-t-3xl">
                         <h3 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
-                          <ChevronRight className="text-indigo-500 w-4 h-4 sm:w-5 sm:h-5"/> สรุปยอดโอนรายบุคคล
+                          <ChevronRight className="text-indigo-500 w-4 h-4 sm:w-5 sm:h-5"/> สรุปยอดโอน
                         </h3>
                       </div>
                       
