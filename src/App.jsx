@@ -941,7 +941,7 @@ export default function App() {
                     <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 shadow-sm h-full flex flex-col">
                       <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50 rounded-t-2xl sm:rounded-t-3xl">
                         <h3 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
-                          <ChevronRight className="text-indigo-500 w-4 h-4 sm:w-5 sm:h-5"/> สรุปยอดโอนรายบุคคล
+                          <ChevronRight className="text-indigo-500 w-4 h-4 sm:w-5 sm:h-5"/> สรุปยอดโอน
                         </h3>
                       </div>
                       
