@@ -3,7 +3,7 @@ import {
   Users, UserPlus, RefreshCw, Trophy, DollarSign, Swords, 
   Clock, Trash2, History, Settings, Play, StopCircle, 
   CheckCircle2, Circle, ChevronRight, Activity, Award,
-  Menu, X, Wifi, WifiOff, AlertCircle, RotateCcw, Copy
+  Menu, X, Wifi, WifiOff
 } from 'lucide-react';
 
 // ==========================================
@@ -17,25 +17,10 @@ export default function App() {
   const [dbStatus, setDbStatus] = useState('checking');
 
   // ==========================================
-  // 1. UI STATES (Toast & Modal)
-  // ==========================================
-  const [toast, setToast] = useState(null);
-  const [confirmDialog, setConfirmDialog] = useState(null);
-
-  const showToast = (message, type = 'error') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  const requestConfirm = (message, onConfirm) => {
-    setConfirmDialog({ message, onConfirm });
-  };
-
-  // ==========================================
-  // 2. DATA STATES
+  // 1. STATES
   // ==========================================
   const [players, setPlayers] = useState(() => {
-    const localData = localStorage.getItem('badminton_players_v9');
+    const localData = localStorage.getItem('badminton_players_v8');
     return localData ? JSON.parse(localData) : [
       { id: '1', name: 'A', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
       { id: '2', name: 'B', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
@@ -49,24 +34,21 @@ export default function App() {
   const [matchMode, setMatchMode] = useState('winner_stays');
   
   const [matchSession, setMatchSession] = useState(() => {
-    const local = localStorage.getItem('badminton_session_v9');
+    const local = localStorage.getItem('badminton_session_v8');
     return local ? JSON.parse(local) : null;
   });
 
   const [matchHistory, setMatchHistory] = useState(() => {
-    const local = localStorage.getItem('badminton_history_v9');
+    const local = localStorage.getItem('badminton_history_v8');
     return local ? JSON.parse(local) : [];
   });
-
-  const [undoSnapshot, setUndoSnapshot] = useState(null); // เก็บ State สำหรับย้อนกลับผลแมตช์
 
   const [calcFees, setCalcFees] = useState({ court: 120, shuttlecock: 0 });
   const [calcPlayers, setCalcPlayers] = useState([]);
   const [calcResults, setCalcResults] = useState([]);
-  const [globalLeaveTime, setGlobalLeaveTime] = useState('21:00'); // เซ็ตเวลาออกแบบรวดเดียว
 
   // ==========================================
-  // 3. API SYNC FUNCTIONS
+  // 2. API SYNC FUNCTIONS
   // ==========================================
   const fetchFromServer = useCallback(async () => {
     try {
@@ -96,9 +78,9 @@ export default function App() {
     if (newHistory) setMatchHistory(newHistory);
     if (newSession !== undefined) setMatchSession(newSession);
 
-    if (newPlayers) localStorage.setItem('badminton_players_v9', JSON.stringify(newPlayers));
-    if (newHistory) localStorage.setItem('badminton_history_v9', JSON.stringify(newHistory));
-    if (newSession !== undefined) localStorage.setItem('badminton_session_v9', JSON.stringify(newSession));
+    if (newPlayers) localStorage.setItem('badminton_players_v8', JSON.stringify(newPlayers));
+    if (newHistory) localStorage.setItem('badminton_history_v8', JSON.stringify(newHistory));
+    if (newSession !== undefined) localStorage.setItem('badminton_session_v8', JSON.stringify(newSession));
 
     if (dbStatus === 'online') {
       try {
@@ -118,31 +100,19 @@ export default function App() {
   const getPlayerLatest = (id) => players.find(p => p.id === String(id)) || { mmr: 0, name: 'Unknown', playCount: 0 };
 
   // ==========================================
-  // 4. LOCK LOGIC (กันลบคนกำลังตี)
-  // ==========================================
-  const isPlayerInMatch = (id) => {
-    if (!matchSession) return false;
-    const strId = String(id);
-    const inCourts = matchSession.courts.some(c =>
-      !c.finished && (c.team1.some(p => String(p.id) === strId) || c.team2.some(p => String(p.id) === strId))
-    );
-    const inQueue = matchSession.waitingQueue?.some(p => String(p.id) === strId);
-    return inCourts || inQueue;
-  };
-
-  // ==========================================
-  // 5. Matchmaking Logic
+  // 3. Matchmaking Logic (แก้ปัญหาคนเป็นเศษ)
   // ==========================================
   const handleStartSession = () => {
     const activePlayers = players.filter(p => p.isActive);
 
-    if (activePlayers.length < 4) return showToast('ต้องมีผู้เล่นที่ "พร้อมลงสนาม" อย่างน้อย 4 คนขึ้นไปครับ', 'error');
+    if (activePlayers.length < 4) return alert('ต้องมีผู้เล่นที่ "พร้อมลงสนาม" อย่างน้อย 4 คนขึ้นไปครับ');
     
+    // [กฎที่ 1: จัดเรียงโดยให้คนที่ได้เล่นน้อยที่สุด (playCount ต่ำสุด) ได้ลงสนามก่อนเสมอ]
     const sortedActive = [...activePlayers].sort((a, b) => {
       const countA = a.playCount || 0;
       const countB = b.playCount || 0;
       if (countA !== countB) return countA - countB;
-      return Math.random() - 0.5;
+      return Math.random() - 0.5; // ถ้าจำนวนรอบเท่ากัน ค่อยสุ่ม
     });
 
     const numToPlay = Math.min(
@@ -150,10 +120,10 @@ export default function App() {
       numCourts * 4
     );
 
-    if (numToPlay === 0) return showToast('จำนวนผู้เล่นไม่พอที่จะจับคู่ลงสนามได้อย่างน้อย 1 สนาม', 'error');
+    if (numToPlay === 0) return alert('จำนวนผู้เล่นไม่พอที่จะจับคู่ลงสนามได้อย่างน้อย 1 สนามครับ');
 
     const selectedToPlay = sortedActive.slice(0, numToPlay);
-    const waitingPlayersQueue = sortedActive.slice(numToPlay);
+    const waitingPlayersQueue = sortedActive.slice(numToPlay); // คิวรอแบบเรียงเดี่ยว
 
     selectedToPlay.sort((a, b) => b.mmr - a.mmr);
 
@@ -178,13 +148,11 @@ export default function App() {
     const newSession = {
       mode: matchMode,
       courts: courts,
-      waitingQueue: waitingPlayersQueue,
+      waitingQueue: waitingPlayersQueue, // เก็บเป็นคิวเรียงเดี่ยวแทน
       round: 1
     };
 
-    setUndoSnapshot(null); // ล้างประวัติย้อนกลับเมื่อจัดทีมใหม่
     updateGlobalState(null, null, newSession);
-    showToast('จัดทีมเริ่มเซสชันสำเร็จ!', 'success');
   };
 
   const recordResult = (courtId, winnerTeamIndex) => {
@@ -192,14 +160,6 @@ export default function App() {
 
     const targetCourt = matchSession.courts.find(c => c.id === courtId);
     if (!targetCourt) return;
-
-    // 🌟 ถ่าย Snapshot โค้ดสำหรับทำ Undo (ก่อนแก้ไขค่าทั้งหมด)
-    const prevState = {
-      players: JSON.parse(JSON.stringify(players)),
-      history: JSON.parse(JSON.stringify(matchHistory)),
-      session: JSON.parse(JSON.stringify(matchSession))
-    };
-    setUndoSnapshot(prevState);
 
     const winningTeam = winnerTeamIndex === 1 ? targetCourt.team1 : targetCourt.team2;
     const losingTeam = winnerTeamIndex === 1 ? targetCourt.team2 : targetCourt.team1;
@@ -238,6 +198,7 @@ export default function App() {
        mmrChanges[p.id] = -drop;
     });
 
+    // อัปเดต MMR และเพิ่มรอบ PlayCount ให้ผู้เล่นที่ลงสนามชุดนี้
     const updatedPlayers = players.map(p => {
       const pId = String(p.id);
       const isWinner = winningTeam.some(w => String(w.id) === pId);
@@ -250,12 +211,13 @@ export default function App() {
            win: isWinner ? p.win + 1 : p.win,
            lose: isLoser ? p.lose + 1 : p.lose,
            mmr: Math.max(10, p.mmr + change),
-           playCount: (p.playCount || 0) + 1
+           playCount: (p.playCount || 0) + 1 // [เพิ่มนับรอบที่เล่นแล้ว]
          };
       }
       return p;
     });
     
+    // บันทึกประวัติ
     const historyId = `M${Date.now().toString().slice(-4)}-C${courtId}`;
     const newRecord = {
       id: historyId,
@@ -266,8 +228,10 @@ export default function App() {
       winnerLabel: winnerTeamIndex === 1 ? 'TEAM A' : 'TEAM B',
       matchDetails: `สนามที่ ${courtId} • ${matchSession.mode === 'winner_stays' ? 'แชมป์อยู่ต่อ' : 'สลับคู่'}`
     };
+    
     const newHistory = [newRecord, ...matchHistory];
 
+    // [กฎที่ 2: ดึงคนเข้า/ออกจากคิวกรณีมีเศษ (Winner Stays)]
     const nextState = { ...matchSession, waitingQueue: [...(matchSession.waitingQueue || [])] };
     const cIdx = nextState.courts.findIndex(c => c.id === courtId);
 
@@ -275,6 +239,7 @@ export default function App() {
       let nextChallengerTeam = null;
       let currentQueue = nextState.waitingQueue;
 
+      // [🌟 อัปเกรด: Smart Queue Sorting] ดันคนที่เล่นน้อยที่สุดมาอยู่หน้าคิวก่อนเสมอ!
       currentQueue.sort((a, b) => {
         const countA = getPlayerLatest(a.id).playCount || 0;
         const countB = getPlayerLatest(b.id).playCount || 0;
@@ -282,22 +247,27 @@ export default function App() {
       });
 
       if (currentQueue.length >= 2) {
+        // มีคนรอเยอะ ดึง 2 คนแรกที่เล่นน้อยสุดมาเข้าสนาม
         nextChallengerTeam = [currentQueue.shift(), currentQueue.shift()];
         currentQueue.push(...losingTeam);
       } 
       else if (currentQueue.length === 1) {
+        // [🌟 แก้ปัญหาเศษ 1] แทนที่จะดูแค่ MMR ให้ดู Play Count ก่อน
         const leftoverPlayer = currentQueue.shift();
+        
+        // ใครในทีมแพ้ที่ "รอบเล่นเยอะกว่า" ให้เด้งออกไปพักต่อคิว!
         const sortedLosers = [...losingTeam].sort((a, b) => {
           const countA = getPlayerLatest(a.id).playCount || 0;
           const countB = getPlayerLatest(b.id).playCount || 0;
-          if (countA !== countB) return countB - countA;
-          return getPlayerLatest(b.id).mmr - getPlayerLatest(a.id).mmr;
+          if (countA !== countB) return countB - countA; // ค่ามากสุด (เล่นเยอะสุด) ไปอยู่ Index 0
+          return getPlayerLatest(b.id).mmr - getPlayerLatest(a.id).mmr; // ถ้าเล่นเท่ากัน เอาคนเก่งสุดไปอยู่ Index 0
         });
         
-        nextChallengerTeam = [leftoverPlayer, sortedLosers[1]];
-        currentQueue.push(sortedLosers[0]);
+        nextChallengerTeam = [leftoverPlayer, sortedLosers[1]]; // คนเล่นน้อย/คนอ่อน ได้เล่นต่อเป็นคู่ให้คนที่เป็นเศษ
+        currentQueue.push(sortedLosers[0]); // คนเล่นเยอะ/คนเก่ง โดนเตะไปพักคิว
       } 
       else {
+        // ไม่มีคิวรอเลย ให้ทีมที่เพิ่งแพ้ รีแมตช์ต่อไป
         nextChallengerTeam = losingTeam;
       }
 
@@ -314,78 +284,54 @@ export default function App() {
     }
 
     updateGlobalState(updatedPlayers, newHistory, nextState);
-    showToast(`บันทึกผลสนาม ${courtId} แล้ว`, 'success');
-  };
-
-  const undoLastMatch = () => {
-    if (!undoSnapshot) return;
-    requestConfirm('คุณต้องการย้อนกลับผลการแข่งขันและการจัดคิวล่าสุดใช่หรือไม่? (MMR จะถูกดึงกลับ)', () => {
-      updateGlobalState(undoSnapshot.players, undoSnapshot.history, undoSnapshot.session);
-      setUndoSnapshot(null);
-      showToast('ย้อนกลับผลแมตช์ล่าสุดเรียบร้อย', 'success');
-    });
   };
 
   const endSession = () => {
-    requestConfirm('ยืนยันการปิดเซสชันการแข่งปัจจุบัน?', () => {
-      updateGlobalState(null, null, null);
-      setUndoSnapshot(null);
-      showToast('ยุติการแข่งขันแล้ว', 'success');
-    });
+    if (window.confirm('ยืนยันการปิดเซสชันการแข่งปัจจุบัน?')) updateGlobalState(null, null, null);
   }
 
   const isAllCourtsFinished = matchSession && matchSession.mode === 'balanced' && matchSession.courts.every(c => c.finished);
 
   // ==========================================
-  // 6. Player Management
+  // 4. Player Management
   // ==========================================
   const addPlayer = () => {
     if (!newPlayerName) return;
-    if (players.some(p => p.name.trim().toLowerCase() === newPlayerName.trim().toLowerCase())) {
-      return showToast('ชื่อนี้มีอยู่ในระบบแล้วครับ', 'error');
-    }
+    if (players.some(p => p.name.trim().toLowerCase() === newPlayerName.trim().toLowerCase())) return alert('ชื่อนี้มีอยู่ในระบบแล้วครับ');
     const newId = Date.now().toString();
     const newP = { id: newId, name: newPlayerName.trim(), mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 };
     updateGlobalState([...players, newP], null, undefined);
     setNewPlayerName('');
-    showToast(`เพิ่มผู้เล่น ${newP.name} เรียบร้อย`, 'success');
   };
 
   const togglePlayerActive = (id) => {
-    if (isPlayerInMatch(id)) return showToast('ไม่สามารถเปลี่ยนสถานะได้ ผู้เล่นกำลังแข่งขันหรือรอคิวอยู่', 'error');
     const updatedPlayers = players.map(p => p.id === String(id) ? { ...p, isActive: !p.isActive } : p);
     updateGlobalState(updatedPlayers, null, undefined);
   };
 
   const removePlayer = (id) => {
-    if (isPlayerInMatch(id)) return showToast('ไม่สามารถลบได้ ผู้เล่นกำลังแข่งขันหรือรอคิวอยู่', 'error');
-    requestConfirm('ลบผู้เล่นคนนี้ออกจากระบบถาวรใช่หรือไม่?', () => {
+    if (window.confirm('ลบผู้เล่นคนนี้ออกจากระบบถาวรใช่หรือไม่?')) {
       const updatedPlayers = players.filter(p => p.id !== String(id));
       updateGlobalState(updatedPlayers, null, undefined);
-      showToast('ลบผู้เล่นออกจากระบบแล้ว', 'success');
-    });
+    }
   };
 
   const clearHistory = () => {
-    requestConfirm('⚠️ ลบประวัติทั้งหมดถาวร ใช่หรือไม่?', () => {
-      updateGlobalState(null, [], undefined);
-      showToast('ล้างประวัติการแข่งเรียบร้อย', 'success');
-    });
+    if (window.confirm('⚠️ ลบประวัติทั้งหมดถาวร ใช่หรือไม่?')) updateGlobalState(null, [], undefined);
   };
 
   const resetRoster = () => {
-    requestConfirm('⚠️ รีเซ็ตข้อมูลผู้เล่นเป็นค่าเริ่มต้นทั้งหมด ใช่หรือไม่?', () => {
+    if (window.confirm('⚠️ รีเซ็ตข้อมูลผู้เล่นเป็นค่าเริ่มต้นทั้งหมด ใช่หรือไม่?')) {
       const defaults = [
         { id: '1', name: 'A', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
         { id: '2', name: 'B', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
       ];
       updateGlobalState(defaults, [], null);
-      showToast('รีเซ็ตข้อมูลผู้เล่นเรียบร้อย', 'success');
-    });
+    }
   };
 
   // ==========================================
-  // 7. Calculator Logic
+  // 5. Calculator Logic
   // ==========================================
   const calculateDynamicFees = () => {
     const totalExpenses = Number(calcFees.court) + Number(calcFees.shuttlecock);
@@ -426,23 +372,14 @@ export default function App() {
   };
   const addCalcPlayer = () => setCalcPlayers([...calcPlayers, { id: Date.now(), name: `Player ${calcPlayers.length + 1}`, joinTime: '19:00', leaveTime: '21:00' }]);
   const removeCalcPlayer = (id) => setCalcPlayers(calcPlayers.filter(p => p.id !== id));
-  
   const importRosterToCalculator = () => {
     const activePlayers = players.filter(p => p.isActive);
-    if (activePlayers.length === 0) return showToast('ไม่มีผู้เล่นที่ตั้งสถานะพร้อมลงสนามครับ', 'error');
+    if (activePlayers.length === 0) return alert('ไม่มีผู้เล่นที่ตั้งสถานะพร้อมลงสนามครับ');
     setCalcPlayers(activePlayers.map(p => ({ id: p.id, name: p.name, joinTime: '19:00', leaveTime: '21:00' })));
-    showToast('ดึงรายชื่อสำเร็จ', 'success');
-  };
-
-  const applyGlobalLeaveTime = () => {
-    if (!globalLeaveTime || calcPlayers.length === 0) return;
-    const updated = calcPlayers.map(p => ({ ...p, leaveTime: globalLeaveTime }));
-    setCalcPlayers(updated);
-    showToast(`ตั้งเวลาออกทุกคนเป็น ${globalLeaveTime} แล้ว`, 'success');
   };
 
   // ==========================================
-  // 8. UI RENDER COMPONENT
+  // 6. UI RENDER
   // ==========================================
   const TabButton = ({ id, icon: Icon, label }) => (
     <button 
@@ -467,32 +404,8 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans pb-20 selection:bg-indigo-100 selection:text-indigo-900 relative">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans pb-20 selection:bg-indigo-100 selection:text-indigo-900">
       
-      {/* 🌟 GLOBAL TOAST NOTIFICATION */}
-      {toast && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300 font-bold text-sm ${toast.type === 'error' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}>
-          {toast.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
-          {toast.message}
-        </div>
-      )}
-
-      {/* 🌟 GLOBAL CONFIRM DIALOG */}
-      {confirmDialog && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
-              <AlertCircle className="text-indigo-500" /> ยืนยันการดำเนินการ
-            </h3>
-            <p className="text-slate-600 text-sm mb-6 leading-relaxed">{confirmDialog.message}</p>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setConfirmDialog(null)} className="px-4 py-2 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors">ยกเลิก</button>
-              <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }} className="px-4 py-2 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 transition-colors">ตกลง</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* SIDEBAR OVERLAY & MENU */}
       <div className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsSidebarOpen(false)}></div>
       <div className={`fixed top-0 left-0 h-full w-72 md:w-80 bg-white shadow-2xl z-[70] transform transition-transform duration-300 ease-in-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -517,7 +430,7 @@ export default function App() {
           <SidebarButton id="calculator" icon={DollarSign} label="บิลค่าสนาม (Calculator)" />
         </div>
         <div className="p-6 border-t border-slate-100 bg-slate-50/50 text-center">
-           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Version 9.0 Pro Features</p>
+           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Version 8.5 Smart Queue</p>
         </div>
       </div>
 
@@ -657,19 +570,11 @@ export default function App() {
                     
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-5 sm:pb-6 mb-5 sm:mb-6 border-b border-white/10 relative z-10 gap-3 sm:gap-4">
                       <div>
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                          <h3 className="font-black text-white text-lg sm:text-xl flex items-center gap-2 tracking-wide">
-                            <span className="relative flex h-2.5 w-2.5 sm:h-3 sm:w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2.5 w-2.5 sm:h-3 sm:w-3 bg-red-500"></span></span>
-                            LIVE ARENA
-                          </h3>
-                          {/* 🌟 ปุ่มย้อนกลับแมตช์ (UNDO) */}
-                          {undoSnapshot && (
-                            <button onClick={undoLastMatch} className="bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/30 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all w-max">
-                              <RotateCcw size={14} /> ย้อนผลที่บันทึกล่าสุด
-                            </button>
-                          )}
-                        </div>
-                        <p className="text-indigo-200/60 text-xs sm:text-sm mt-2 sm:mt-1 font-medium">{matchSession.mode === 'winner_stays' ? 'โหมด: แชมป์อยู่ต่อ' : 'โหมด: สลับใหม่ทุกรอบ (กระจายให้เล่นเท่ากัน)'}</p>
+                        <h3 className="font-black text-white text-lg sm:text-xl flex items-center gap-2 tracking-wide">
+                          <span className="relative flex h-2.5 w-2.5 sm:h-3 sm:w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2.5 w-2.5 sm:h-3 sm:w-3 bg-red-500"></span></span>
+                          LIVE ARENA
+                        </h3>
+                        <p className="text-indigo-200/60 text-xs sm:text-sm mt-1 font-medium">{matchSession.mode === 'winner_stays' ? 'โหมด: แชมป์อยู่ต่อ' : 'โหมด: สลับใหม่ทุกรอบ (กระจายให้เล่นเท่ากัน)'}</p>
                       </div>
                       <span className="bg-white/5 backdrop-blur-md text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold border border-white/10 flex items-center gap-1.5 sm:gap-2 w-max"><Swords size={14} className="text-indigo-400 sm:w-4 sm:h-4"/> {matchSession.courts.length} สนามทำงาน</span>
                     </div>
@@ -813,7 +718,7 @@ export default function App() {
                     <h2 className="text-xl sm:text-2xl font-black flex items-center gap-2"><DollarSign className="w-6 h-6 sm:w-8 sm:h-8 text-emerald-400" /> ระบบหารค่าสนาม (Pro-Rata)</h2>
                     <p className="text-slate-400 text-xs sm:text-sm mt-1.5 sm:mt-2 max-w-md">คำนวณเงินตาม "นาทีที่เล่นจริง" เพื่อความยุติธรรมสำหรับคนที่มาไม่พร้อมกัน</p>
                   </div>
-                  <button onClick={importRosterToCalculator} className="bg-white/10 hover:bg-white/20 text-white px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold backdrop-blur-md transition-all flex items-center justify-center gap-2 border border-white/10"><Users size={14} className="sm:w-4 sm:h-4"/> ดึงรายชื่อ ({players.filter(p=>p.isActive).length})</button>
+                  <button onClick={importRosterToCalculator} className="bg-white/10 hover:bg-white/20 text-white px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold backdrop-blur-md transition-all flex items-center justify-center gap-2 border border-white/10"><Users size={14} className="sm:w-4 sm:h-4"/> ดึงชื่อคนพร้อมเล่น ({players.filter(p=>p.isActive).length})</button>
                 </div>
               </div>
 
@@ -848,19 +753,6 @@ export default function App() {
                         <h3 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2"><Clock size={16} className="text-indigo-500 sm:w-[18px] sm:h-[18px]"/> ผู้เล่นและเวลา</h3>
                         <button onClick={addCalcPlayer} className="text-[10px] sm:text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2.5 sm:px-3 py-1.5 rounded-lg font-bold transition-colors">+ เพิ่มคน</button>
                       </div>
-
-                      {/* 🌟 เซ็ตเวลาออกทุกคน */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-                        <div className="flex items-center gap-2">
-                          <Copy size={14} className="text-indigo-500" />
-                          <span className="text-[10px] sm:text-xs font-bold text-indigo-800">เซ็ตเวลาออกทุกคน:</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <input type="time" value={globalLeaveTime} onChange={e => setGlobalLeaveTime(e.target.value)} className="p-1 sm:p-1.5 rounded-lg border border-indigo-200 text-xs font-mono outline-none bg-white w-full sm:w-auto" />
-                          <button onClick={applyGlobalLeaveTime} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all shadow-sm">นำไปใช้</button>
-                        </div>
-                      </div>
-
                       <div className="space-y-2.5 sm:space-y-3 max-h-[350px] sm:max-h-[400px] overflow-y-auto pr-1 sm:pr-2 custom-scrollbar">
                         {calcPlayers.map((player, index) => (
                           <div key={player.id} className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 shadow-sm relative group">
