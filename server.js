@@ -15,7 +15,7 @@ const pool = new Pool({
 // สร้างตารางเก็บข้อมูลแอปอัตโนมัติ (ถ้ายังไม่มี)
 pool.query(`CREATE TABLE IF NOT EXISTS "AppData" (id INT PRIMARY KEY, data JSONB)`);
 
-// Endpoint ดึงข้อมูล (โหลดไปโชว์ที่เครื่องผู้ใช้)
+// Endpoint ดึงข้อมูล (โหลดไปโชว์ที่เครื่องผู้ใช้) - เส้นทางนี้คือที่ React เรียกหา!
 app.get('/api/sync', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT data FROM "AppData" WHERE id = 1');
@@ -25,7 +25,7 @@ app.get('/api/sync', async (req, res) => {
   }
 });
 
-// Endpoint รับข้อมูล (เวลามีกดเพิ่มคน/ใส่คะแนน)
+// Endpoint รับข้อมูล (เวลามีกดเพิ่มคน/ใส่คะแนน) - เส้นทางนี้คือที่ React เรียกหา!
 app.post('/api/sync', async (req, res) => {
   try {
     const jsonData = req.body;
