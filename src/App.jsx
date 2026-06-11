@@ -319,7 +319,7 @@ export default function App() {
   };
 
   const resetRoster = () => {
-    if (window.confirm('⚠️ รีเซ็ตข้อมูลผู้เล่นกลับเป็นค่าเริ่มต้นทั้งหมด ใช่หรือไม่?')) {
+    if (window.confirm('⚠️ รีเซ็ตข้อมูลผู้เล่นเป็นค่าเริ่มต้นทั้งหมด ใช่หรือไม่?')) {
       const defaults = [
         { id: '1', name: 'A', mmr: 100, win: 0, lose: 0, isActive: true },
         { id: '2', name: 'B', mmr: 100, win: 0, lose: 0, isActive: true },
