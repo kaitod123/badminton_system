@@ -5,92 +5,152 @@ import {
   CheckCircle2, Circle, ChevronRight, Activity, Award,
   Menu, X
 } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+
+// ==========================================
+// 0. FIREBASE REAL-TIME DATABASE INIT
+// ==========================================
+let app, auth, db, appId;
+try {
+  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+  if (firebaseConfig) {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  }
+} catch (e) {
+  console.error("Database init error", e);
+}
 
 export default function App() {
   // ==========================================
-  // 1. STATES: ระบบนำทาง (Navigation)
+  // 1. STATES: ระบบนำทาง (Navigation) & Auth
   // ==========================================
   const [activeTab, setActiveTab] = useState('matchmaking');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // ==========================================
-  // 2. STATES: ระบบรายชื่อและจับคู่ (Roster & Matchmaking)
+  // 2. STATES: ระบบข้อมูล Real-time
   // ==========================================
-  const [players, setPlayers] = useState(() => {
-    const localData = localStorage.getItem('badminton_players_v6'); // อัปเดตเวอร์ชัน
-    return localData ? JSON.parse(localData) : [
-      { id: 1, name: 'A', mmr: 100, win: 0, lose: 0, isActive: true },
-      { id: 2, name: 'B', mmr: 100, win: 0, lose: 0, isActive: true },
-      { id: 3, name: 'C', mmr: 100, win: 0, lose: 0, isActive: true },
-      { id: 4, name: 'D', mmr: 100, win: 0, lose: 0, isActive: true },
-      { id: 5, name: 'E', mmr: 100, win: 0, lose: 0, isActive: true },
-      { id: 6, name: 'F', mmr: 100, win: 0, lose: 0, isActive: true },
-      { id: 7, name: 'G', mmr: 100, win: 0, lose: 0, isActive: true },
-      { id: 8, name: 'H', mmr: 100, win: 0, lose: 0, isActive: true },
-    ];
-  });
-  const [newPlayerName, setNewPlayerName] = useState('');
+  const [players, setPlayers] = useState([]);
+  const [matchHistory, setMatchHistory] = useState([]);
+  const [matchSession, setMatchSession] = useState(null);
   
   const [numCourts, setNumCourts] = useState(2);
   const [matchMode, setMatchMode] = useState('winner_stays');
-  const [matchSession, setMatchSession] = useState(null);
 
   // ==========================================
-  // 3. STATES: ระบบประวัติการแข่งขันย้อนหลัง
-  // ==========================================
-  const [matchHistory, setMatchHistory] = useState(() => {
-    const localHistory = localStorage.getItem('badminton_history_v6');
-    return localHistory ? JSON.parse(localHistory) : [];
-  });
-
-  // ==========================================
-  // 4. STATES: ระบบคำนวณค่าสนาม
+  // 3. STATES: ระบบคำนวณค่าสนาม (ทำงานออฟไลน์ในเครื่องแต่ละคน)
   // ==========================================
   const [calcFees, setCalcFees] = useState({ court: 120, shuttlecock: 0 });
   const [calcPlayers, setCalcPlayers] = useState([]);
   const [calcResults, setCalcResults] = useState([]);
 
   // ==========================================
-  // 5. EFFECTS: ระบบบันทึกข้อมูลอัตโนมัติ
+  // 4. EFFECTS: Database Connection & Listeners
   // ==========================================
   useEffect(() => {
-    localStorage.setItem('badminton_players_v6', JSON.stringify(players));
-  }, [players]);
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error('Auth error', err);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem('badminton_history_v6', JSON.stringify(matchHistory));
-  }, [matchHistory]);
+    if (!user || !db) return;
 
-  const getPlayerLatest = (id) => players.find(p => p.id === id) || { mmr: 0, name: 'Unknown' };
+    const playersRef = collection(db, 'artifacts', appId, 'public', 'data', 'players');
+    const historyRef = collection(db, 'artifacts', appId, 'public', 'data', 'history');
+    const sessionRef = collection(db, 'artifacts', appId, 'public', 'data', 'session');
+
+    // Listener สำหรับข้อมูลผู้เล่น
+    const unsubPlayers = onSnapshot(playersRef, (snap) => {
+      const p = [];
+      snap.forEach(d => p.push(d.data()));
+      
+      // ถ้าระบบยังว่างเปล่า ให้ใส่ข้อมูลเริ่มต้น
+      if (p.length === 0 && isLoading) {
+        const defaults = [
+          { id: '1', name: 'A', mmr: 100, win: 0, lose: 0, isActive: true },
+          { id: '2', name: 'B', mmr: 100, win: 0, lose: 0, isActive: true },
+          { id: '3', name: 'C', mmr: 100, win: 0, lose: 0, isActive: true },
+          { id: '4', name: 'D', mmr: 100, win: 0, lose: 0, isActive: true },
+          { id: '5', name: 'E', mmr: 100, win: 0, lose: 0, isActive: true },
+          { id: '6', name: 'F', mmr: 100, win: 0, lose: 0, isActive: true },
+          { id: '7', name: 'G', mmr: 100, win: 0, lose: 0, isActive: true },
+          { id: '8', name: 'H', mmr: 100, win: 0, lose: 0, isActive: true },
+        ];
+        const batch = writeBatch(db);
+        defaults.forEach(d => batch.set(doc(playersRef, d.id), d));
+        batch.commit().then(() => setIsLoading(false));
+      } else {
+        setPlayers(p);
+        setIsLoading(false);
+      }
+    }, console.error);
+
+    // Listener สำหรับข้อมูลประวัติ
+    const unsubHistory = onSnapshot(historyRef, (snap) => {
+      const h = [];
+      snap.forEach(d => h.push({ docId: d.id, ...d.data() }));
+      setMatchHistory(h.sort((a,b) => b.timestamp - a.timestamp));
+    }, console.error);
+
+    // Listener สำหรับกระดานแข่งขัน
+    const unsubSession = onSnapshot(sessionRef, (snap) => {
+      let active = null;
+      snap.forEach(d => { if (d.id === 'current') active = d.data(); });
+      setMatchSession(active);
+    }, console.error);
+
+    return () => { unsubPlayers(); unsubHistory(); unsubSession(); };
+  }, [user]);
+
+  const getPlayerLatest = (id) => players.find(p => p.id === String(id) || p.id === id) || { mmr: 0, name: 'Unknown' };
 
   // ==========================================
-  // 6. FUNCTIONS: Matchmaking Logic (อัลกอริทึมใหม่)
+  // 5. FUNCTIONS: Matchmaking & Database Sync
   // ==========================================
-  const handleStartSession = () => {
+  const handleStartSession = async () => {
     const activePlayers = players.filter(p => p.isActive);
 
     if (activePlayers.length < 4) return alert('ต้องมีผู้เล่นที่ "พร้อมลงสนาม" อย่างน้อย 4 คนขึ้นไปครับ');
     
-    // [อัปเกรด 1]: สุ่มคนที่จะได้เล่นก่อน เพื่อป้องกันไม่ให้คนคะแนนน้อยสุดกลายเป็น "เศษ" เสมอ
+    // สุ่มคนที่จะได้เล่นเพื่อกระจายคนเป็นเศษ
     const shuffledActive = [...activePlayers].sort(() => Math.random() - 0.5);
-    
     const numToPlay = Math.min(
-      shuffledActive.length - (shuffledActive.length % 4), // หาจำนวนคนที่หาร 4 ลงตัว
-      numCourts * 4 // ไม่เกินความจุสนามทั้งหมด
+      shuffledActive.length - (shuffledActive.length % 4),
+      numCourts * 4
     );
 
     if (numToPlay === 0) return alert('จำนวนผู้เล่นไม่พอที่จะจับคู่ลงสนามได้อย่างน้อย 1 สนามครับ');
 
     const selectedToPlay = shuffledActive.slice(0, numToPlay);
-    const waitingPlayers = shuffledActive.slice(numToPlay); // เศษที่เหลือไปรอคิว
+    const waitingPlayers = shuffledActive.slice(numToPlay);
 
-    // [อัปเกรด 2]: จัดเรียงคนที่ได้เล่นตาม MMR เพื่อเตรียมทำ Snake Draft
     selectedToPlay.sort((a, b) => b.mmr - a.mmr);
 
     const pairs = [];
     const half = selectedToPlay.length / 2;
     
-    // จับคู่แบบ Snake: อันดับ 1 คู่กับ N, อันดับ 2 คู่กับ N-1 (หัวท้ายชนกัน)
+    // Snake Draft
     for (let i = 0; i < half; i++) {
       pairs.push([selectedToPlay[i], selectedToPlay[selectedToPlay.length - 1 - i]]);
     }
@@ -98,7 +158,7 @@ export default function App() {
     const courts = [];
     const actualCourts = pairs.length / 2;
     
-    // [อัปเกรด 3]: จัดทีมไขว้กัน (Cross-Match) คู่ที่เก่งสุด เจอกับคู่ที่เก่งกลางๆ เพื่อความสมดุลสูงสุด
+    // Cross-Match Teams
     for (let i = 0; i < actualCourts; i++) {
       courts.push({
         id: i + 1,
@@ -109,23 +169,27 @@ export default function App() {
       });
     }
 
-    // จัดกลุ่มคนรอคิวเป็นคู่ๆ
     const waitingPairs = [];
     for (let i = 0; i < waitingPlayers.length - 1; i += 2) {
        waitingPairs.push([waitingPlayers[i], waitingPlayers[i+1]]);
     }
 
-    setMatchSession({
+    const newSession = {
       mode: matchMode,
       courts: courts,
       waitingPairs: waitingPairs,
       oddPlayer: waitingPlayers.length % 2 !== 0 ? waitingPlayers[waitingPlayers.length - 1] : null,
       round: 1
-    });
+    };
+
+    // เขียนลงฐานข้อมูล
+    if (db && user) {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'session', 'current'), newSession);
+    }
   };
 
-  const recordResult = (courtId, winnerTeamIndex) => {
-    if (!matchSession) return;
+  const recordResult = async (courtId, winnerTeamIndex) => {
+    if (!matchSession || !db || !user) return;
 
     const targetCourt = matchSession.courts.find(c => c.id === courtId);
     if (!targetCourt) return;
@@ -133,158 +197,179 @@ export default function App() {
     const winningTeam = winnerTeamIndex === 1 ? targetCourt.team1 : targetCourt.team2;
     const losingTeam = winnerTeamIndex === 1 ? targetCourt.team2 : targetCourt.team1;
 
-    // [อัปเกรด 4]: Smart MMR System
     const getAvgMmr = (team) => team.reduce((sum, p) => sum + getPlayerLatest(p.id).mmr, 0) / team.length;
     const winAvg = getAvgMmr(winningTeam);
     const loseAvg = getAvgMmr(losingTeam);
 
-    const mmrChanges = {}; // เก็บค่า MMR ที่เปลี่ยนแปลงของแต่ละคน
+    const mmrChanges = {};
 
-    // คำนวณฝั่งชนะ
     winningTeam.forEach(p => {
        const partner = winningTeam.find(x => x.id !== p.id);
-       let gain = 15; // แต้มพื้นฐานตอนชนะ
+       let gain = 15;
        const pMmr = getPlayerLatest(p.id).mmr;
        const partnerMmr = getPlayerLatest(partner.id).mmr;
 
-       // กฎ Team vs Team: ชนะทีมเก่งกว่าได้โบนัส, ชนะทีมอ่อนกว่าได้น้อยลง
        if (loseAvg > winAvg + 10) gain += 3; 
        else if (winAvg > loseAvg + 10) gain -= 3;
 
-       // กฎ แบก vs ถูกแบก: ตรวจจับว่าตัวเองเป็นคนแบกหรือถูกแบก
-       if (pMmr < partnerMmr - 10) gain += 2; // เป็นตัวอ่อนแต่ชนะได้ (ไม่เป็นตัวถ่วง) ได้โบนัส
-       else if (pMmr > partnerMmr + 10) gain -= 2; // เป็นตัวแบก ได้แต้มน้อยลงนิดนึงเพื่อไม่ให้แต้มเฟ้อ
+       if (pMmr < partnerMmr - 10) gain += 2;
+       else if (pMmr > partnerMmr + 10) gain -= 2;
 
        mmrChanges[p.id] = gain;
     });
 
-    // คำนวณฝั่งแพ้
     losingTeam.forEach(p => {
        const partner = losingTeam.find(x => x.id !== p.id);
-       let drop = 10; // แต้มหักพื้นฐาน
+       let drop = 10;
        const pMmr = getPlayerLatest(p.id).mmr;
        const partnerMmr = getPlayerLatest(partner.id).mmr;
 
-       // กฎ Team vs Team
-       if (loseAvg > winAvg + 10) drop += 3; // ทีมเต็งแต่ดันแพ้ (เสียฟอร์ม โดนหักเยอะ)
-       else if (winAvg > loseAvg + 10) drop -= 3; // ทีมมวยรองแพ้ (เรื่องปกติ โดนหักน้อย)
+       if (loseAvg > winAvg + 10) drop += 3;
+       else if (winAvg > loseAvg + 10) drop -= 3;
 
-       // กฎ แบก vs ถูกแบก
-       if (pMmr > partnerMmr + 10) drop -= 2; // ตัวแบกแพ้ (พยายามแล้ว โดนหักน้อยลง)
-       else if (pMmr < partnerMmr - 10) drop += 2; // ตัวถูกแบกแล้วยังแพ้ (โดนหักเยอะขึ้น)
+       if (pMmr > partnerMmr + 10) drop -= 2;
+       else if (pMmr < partnerMmr - 10) drop += 2;
 
        mmrChanges[p.id] = -drop;
     });
 
-    // อัปเดต Players Database
-    const updatedPlayers = players.map(p => {
-      if (mmrChanges[p.id] !== undefined) {
-         const change = mmrChanges[p.id];
-         return {
-           ...p,
-           win: change > 0 ? p.win + 1 : p.win,
-           lose: change < 0 ? p.lose + 1 : p.lose,
-           mmr: Math.max(10, p.mmr + change) // MMR ขั้นต่ำคือ 10
-         };
+    // เริ่ม Batch Update ไปที่ Cloud
+    const batch = writeBatch(db);
+
+    // 1. อัปเดต MMR ผู้ชนะ
+    winningTeam.forEach(p => {
+      const pObj = players.find(x => x.id === p.id);
+      if (pObj) {
+        const newObj = { ...pObj, win: pObj.win + 1, mmr: Math.max(10, pObj.mmr + mmrChanges[p.id]) };
+        batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(p.id)), newObj);
       }
-      return p;
+    });
+
+    // 2. อัปเดต MMR ผู้แพ้
+    losingTeam.forEach(p => {
+      const pObj = players.find(x => x.id === p.id);
+      if (pObj) {
+        const newObj = { ...pObj, lose: pObj.lose + 1, mmr: Math.max(10, pObj.mmr + mmrChanges[p.id]) };
+        batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(p.id)), newObj);
+      }
     });
     
-    // บันทึกประวัติพร้อมรายละเอียดส่วนบุคคล
+    // 3. บันทึกประวัติ
+    const historyId = `M${Date.now().toString().slice(-4)}-C${courtId}`;
     const newRecord = {
-      id: `M${Date.now().toString().slice(-4)}-C${courtId}`,
+      id: historyId,
+      timestamp: Date.now(),
       date: new Date().toLocaleString('th-TH', { hour12: false, month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' }),
       team1: winningTeam.map(p => ({ name: p.name, mmr: getPlayerLatest(p.id).mmr, change: `+${mmrChanges[p.id]}` })),
-      team2: losingTeam.map(p => ({ name: p.name, mmr: getPlayerLatest(p.id).mmr, change: `${mmrChanges[p.id]}` })), // ค่าติดลบมี - อยู่แล้ว
+      team2: losingTeam.map(p => ({ name: p.name, mmr: getPlayerLatest(p.id).mmr, change: `${mmrChanges[p.id]}` })),
       winnerLabel: winnerTeamIndex === 1 ? 'TEAM A' : 'TEAM B',
       matchDetails: `สนามที่ ${courtId} • ${matchSession.mode === 'winner_stays' ? 'แชมป์อยู่ต่อ' : 'สลับคู่'}`
     };
+    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'history', historyId), newRecord);
 
-    setMatchHistory(prev => [newRecord, ...prev]);
-    setPlayers(updatedPlayers);
+    // 4. อัปเดตกระดาน
+    const nextState = { ...matchSession, waitingPairs: [...matchSession.waitingPairs] };
+    const cIdx = nextState.courts.findIndex(c => c.id === courtId);
 
-    setMatchSession(prev => {
-      const nextState = { ...prev, waitingPairs: [...prev.waitingPairs] };
-      const cIdx = nextState.courts.findIndex(c => c.id === courtId);
-
-      if (nextState.mode === 'winner_stays') {
-        if (nextState.waitingPairs.length > 0) {
-          const nextChallengerTeam = nextState.waitingPairs.shift();
-          nextState.waitingPairs.push(losingTeam);
-          
-          nextState.courts[cIdx] = {
-            ...nextState.courts[cIdx],
-            team1: winningTeam,
-            team2: nextChallengerTeam,
-            finished: false,
-            winnerIndex: null
-          };
-        } else {
-          nextState.courts[cIdx] = {
-            ...nextState.courts[cIdx],
-            team1: winningTeam, 
-            team2: losingTeam,
-            finished: false,
-            winnerIndex: null
-          };
-        }
+    if (nextState.mode === 'winner_stays') {
+      if (nextState.waitingPairs.length > 0) {
+        const nextChallengerTeam = nextState.waitingPairs.shift();
+        nextState.waitingPairs.push(losingTeam);
+        
+        nextState.courts[cIdx] = {
+          ...nextState.courts[cIdx],
+          team1: winningTeam,
+          team2: nextChallengerTeam,
+          finished: false,
+          winnerIndex: null
+        };
       } else {
-        nextState.courts[cIdx].finished = true;
-        nextState.courts[cIdx].winnerIndex = winnerTeamIndex;
+        nextState.courts[cIdx] = {
+          ...nextState.courts[cIdx],
+          team1: winningTeam, 
+          team2: losingTeam,
+          finished: false,
+          winnerIndex: null
+        };
       }
+    } else {
+      nextState.courts[cIdx].finished = true;
+      nextState.courts[cIdx].winnerIndex = winnerTeamIndex;
+    }
 
-      return nextState;
-    });
+    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'session', 'current'), nextState);
+
+    await batch.commit();
   };
 
-  const endSession = () => {
+  const endSession = async () => {
     if (window.confirm('ยืนยันการปิดเซสชันการแข่งปัจจุบัน?')) {
-      setMatchSession(null);
+      if (db && user) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'session', 'current'));
     }
   }
 
   const isAllCourtsFinished = matchSession && matchSession.mode === 'balanced' && matchSession.courts.every(c => c.finished);
 
   // ==========================================
-  // 7. FUNCTIONS: Player Management
+  // 6. FUNCTIONS: Database Player Management
   // ==========================================
-  const addPlayer = () => {
-    if (!newPlayerName) return;
+  const addPlayer = async () => {
+    if (!newPlayerName || !db || !user) return;
     if (players.some(p => p.name.trim().toLowerCase() === newPlayerName.trim().toLowerCase())) return alert('ชื่อนี้มีอยู่ในระบบแล้วครับ');
     
-    const newP = { id: Date.now(), name: newPlayerName.trim(), mmr: 100, win: 0, lose: 0, isActive: true };
-    setPlayers([...players, newP]);
+    const newId = Date.now().toString();
+    const newP = { id: newId, name: newPlayerName.trim(), mmr: 100, win: 0, lose: 0, isActive: true };
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'players', newId), newP);
     setNewPlayerName('');
   };
 
-  const togglePlayerActive = (id) => {
-    setPlayers(players.map(p => {
-      if (p.id === id) return { ...p, isActive: !p.isActive };
-      return p;
-    }));
+  const togglePlayerActive = async (id) => {
+    if (!db || !user) return;
+    const p = players.find(x => x.id === String(id) || x.id === id);
+    if (p) {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(p.id)), { ...p, isActive: !p.isActive });
+    }
   };
 
-  const removePlayer = (id) => {
+  const removePlayer = async (id) => {
+    if (!db || !user) return;
     if (window.confirm('ลบผู้เล่นคนนี้ออกจากระบบถาวรใช่หรือไม่?')) {
-      setPlayers(players.filter(p => p.id !== id));
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(id)));
     }
   };
 
-  const clearHistory = () => {
+  const clearHistory = async () => {
+    if (!db || !user) return;
     if (window.confirm('⚠️ ลบประวัติทั้งหมดถาวร ใช่หรือไม่?')) {
-      setMatchHistory([]);
+      const batch = writeBatch(db);
+      matchHistory.forEach(h => {
+         batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'history', String(h.docId)));
+      });
+      await batch.commit();
     }
   };
 
-  const resetRoster = () => {
+  const resetRoster = async () => {
+    if (!db || !user) return;
     if (window.confirm('⚠️ รีเซ็ตข้อมูลผู้เล่นกลับเป็นค่าเริ่มต้นทั้งหมด ใช่หรือไม่?')) {
-      localStorage.removeItem('badminton_players_v6');
-      window.location.reload();
+      const batch = writeBatch(db);
+      players.forEach(p => {
+         batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(p.id)));
+      });
+      
+      const defaults = [
+        { id: '1', name: 'A', mmr: 100, win: 0, lose: 0, isActive: true },
+        { id: '2', name: 'B', mmr: 100, win: 0, lose: 0, isActive: true },
+      ];
+      defaults.forEach(d => {
+         batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'players', String(d.id)), d);
+      });
+      await batch.commit();
     }
   };
 
   // ==========================================
-  // 8. FUNCTIONS: Calculator Logic
+  // 7. FUNCTIONS: Calculator Logic (Local Only)
   // ==========================================
   const calculateDynamicFees = () => {
     const totalExpenses = Number(calcFees.court) + Number(calcFees.shuttlecock);
@@ -354,8 +439,19 @@ export default function App() {
   };
 
   // ==========================================
-  // 9. REUSABLE COMPONENTS & UI RENDER
+  // 8. REUSABLE COMPONENTS & UI RENDER
   // ==========================================
+  if (!user || isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
+        <div className="flex flex-col items-center gap-4">
+          <RefreshCw className="w-10 h-10 text-indigo-600 animate-spin" />
+          <p className="font-bold text-slate-500">กำลังเชื่อมต่อฐานข้อมูลแบบเรียลไทม์...</p>
+        </div>
+      </div>
+    );
+  }
+
   const TabButton = ({ id, icon: Icon, label }) => (
     <button 
       onClick={() => setActiveTab(id)}
@@ -373,7 +469,7 @@ export default function App() {
     <button 
       onClick={() => {
         setActiveTab(id);
-        setIsSidebarOpen(false); // ปิด Sidebar เมื่อกดเลือกเมนู
+        setIsSidebarOpen(false);
       }}
       className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all w-full text-left
         ${activeTab === id 
@@ -404,7 +500,10 @@ export default function App() {
             </div>
             <div>
               <h2 className="text-lg font-black text-slate-800 tracking-tight">Badminton Pro</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Manager System</p>
+              <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                Online Manager
+              </p>
             </div>
           </div>
           <button 
@@ -423,7 +522,7 @@ export default function App() {
         </div>
         
         <div className="p-6 border-t border-slate-100 bg-slate-50/50 text-center">
-           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Version 6.0 Smart MMR</p>
+           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Version 7.0 Cloud Sync</p>
         </div>
       </div>
 
@@ -442,12 +541,16 @@ export default function App() {
               </button>
 
               <div className="flex items-center gap-2 sm:gap-3">
-                <div className="bg-gradient-to-br from-indigo-600 to-violet-600 text-white p-2 sm:p-2.5 rounded-xl sm:rounded-2xl shadow-indigo-500/30 shadow-lg">
+                <div className="bg-gradient-to-br from-indigo-600 to-violet-600 text-white p-2 sm:p-2.5 rounded-xl sm:rounded-2xl shadow-indigo-500/30 shadow-lg relative">
                   <Swords size={20} className="sm:w-6 sm:h-6" />
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 border-2 border-white rounded-full"></div>
                 </div>
                 <div>
                   <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-indigo-900 to-slate-800 bg-clip-text text-transparent">Badminton Pro</h1>
-                  <p className="hidden sm:block text-[10px] sm:text-[11px] font-medium text-slate-400 uppercase tracking-wider">Manager System</p>
+                  <p className="hidden sm:flex text-[10px] sm:text-[11px] font-bold text-emerald-500 uppercase tracking-wider items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Online Synced
+                  </p>
                 </div>
               </div>
             </div>
@@ -941,7 +1044,7 @@ export default function App() {
                     <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 shadow-sm h-full flex flex-col">
                       <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50 rounded-t-2xl sm:rounded-t-3xl">
                         <h3 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
-                          <ChevronRight className="text-indigo-500 w-4 h-4 sm:w-5 sm:h-5"/> สรุปยอดโอน
+                          <ChevronRight className="text-indigo-500 w-4 h-4 sm:w-5 sm:h-5"/> สรุปยอดโอนรายบุคคล
                         </h3>
                       </div>
                       
