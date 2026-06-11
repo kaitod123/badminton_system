@@ -1,17 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, RefreshCw, Trophy, DollarSign, Swords, Clock, Trash2, History, Settings, Play, StopCircle, CheckSquare, Square } from 'lucide-react';
+import { 
+  Users, UserPlus, RefreshCw, Trophy, DollarSign, Swords, 
+  Clock, Trash2, History, Settings, Play, StopCircle, 
+  CheckCircle2, Circle, ChevronRight, Activity, Award,
+  Menu, X
+} from 'lucide-react';
 
 export default function App() {
   // ==========================================
   // 1. STATES: ระบบนำทาง (Navigation)
   // ==========================================
-  const [activeTab, setActiveTab] = useState('matchmaking'); // 'matchmaking', 'history', 'calculator'
+  const [activeTab, setActiveTab] = useState('matchmaking');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // ==========================================
   // 2. STATES: ระบบรายชื่อและจับคู่ (Roster & Matchmaking)
   // ==========================================
   const [players, setPlayers] = useState(() => {
-    const localData = localStorage.getItem('badminton_players_v4');
+    const localData = localStorage.getItem('badminton_players_v6'); // อัปเดตเวอร์ชัน
     return localData ? JSON.parse(localData) : [
       { id: 1, name: 'A', mmr: 100, win: 0, lose: 0, isActive: true },
       { id: 2, name: 'B', mmr: 100, win: 0, lose: 0, isActive: true },
@@ -19,22 +25,21 @@ export default function App() {
       { id: 4, name: 'D', mmr: 100, win: 0, lose: 0, isActive: true },
       { id: 5, name: 'E', mmr: 100, win: 0, lose: 0, isActive: true },
       { id: 6, name: 'F', mmr: 100, win: 0, lose: 0, isActive: true },
+      { id: 7, name: 'G', mmr: 100, win: 0, lose: 0, isActive: true },
+      { id: 8, name: 'H', mmr: 100, win: 0, lose: 0, isActive: true },
     ];
   });
   const [newPlayerName, setNewPlayerName] = useState('');
   
-  // ตั้งค่าการเล่น
   const [numCourts, setNumCourts] = useState(2);
-  const [matchMode, setMatchMode] = useState('winner_stays'); // 'winner_stays' หรือ 'balanced'
-  
-  // สถานะเซสชันการแข่งขัน
+  const [matchMode, setMatchMode] = useState('winner_stays');
   const [matchSession, setMatchSession] = useState(null);
 
   // ==========================================
   // 3. STATES: ระบบประวัติการแข่งขันย้อนหลัง
   // ==========================================
   const [matchHistory, setMatchHistory] = useState(() => {
-    const localHistory = localStorage.getItem('badminton_history_v4');
+    const localHistory = localStorage.getItem('badminton_history_v6');
     return localHistory ? JSON.parse(localHistory) : [];
   });
 
@@ -42,82 +47,79 @@ export default function App() {
   // 4. STATES: ระบบคำนวณค่าสนาม
   // ==========================================
   const [calcFees, setCalcFees] = useState({ court: 120, shuttlecock: 0 });
-  const [calcPlayers, setCalcPlayers] = useState([
-    { id: 1, name: 'A', joinTime: '19:00', leaveTime: '21:00' },
-    { id: 2, name: 'B', joinTime: '19:00', leaveTime: '21:00' },
-    { id: 3, name: 'C', joinTime: '19:00', leaveTime: '21:00' },
-    { id: 4, name: 'D', joinTime: '19:00', leaveTime: '21:00' }
-  ]);
+  const [calcPlayers, setCalcPlayers] = useState([]);
   const [calcResults, setCalcResults] = useState([]);
 
   // ==========================================
   // 5. EFFECTS: ระบบบันทึกข้อมูลอัตโนมัติ
   // ==========================================
   useEffect(() => {
-    localStorage.setItem('badminton_players_v4', JSON.stringify(players));
+    localStorage.setItem('badminton_players_v6', JSON.stringify(players));
   }, [players]);
 
   useEffect(() => {
-    localStorage.setItem('badminton_history_v4', JSON.stringify(matchHistory));
+    localStorage.setItem('badminton_history_v6', JSON.stringify(matchHistory));
   }, [matchHistory]);
 
-  // ฟังก์ชันดึง MMR ล่าสุดเสมอ
   const getPlayerLatest = (id) => players.find(p => p.id === id) || { mmr: 0, name: 'Unknown' };
 
   // ==========================================
-  // 6. FUNCTIONS: Matchmaking Logic & Winner Stays
+  // 6. FUNCTIONS: Matchmaking Logic (อัลกอริทึมใหม่)
   // ==========================================
   const handleStartSession = () => {
-    // กรองเอาเฉพาะคนที่ติ๊กว่า "มาเล่น/พร้อมลงสนาม (isActive: true)" เท่านั้น
     const activePlayers = players.filter(p => p.isActive);
 
-    if (activePlayers.length < 4) return alert('ต้องมีผู้เล่นที่ติ๊กสถานะ "พร้อมลงสนาม" อย่างน้อย 4 คนขึ้นไปนะครับ');
+    if (activePlayers.length < 4) return alert('ต้องมีผู้เล่นที่ "พร้อมลงสนาม" อย่างน้อย 4 คนขึ้นไปครับ');
     
-    // เรียงลำดับตามฝีมือ MMR จากมากไปน้อย (เฉพาะคนที่มา)
-    const sorted = [...activePlayers].sort((a, b) => b.mmr - a.mmr);
+    // [อัปเกรด 1]: สุ่มคนที่จะได้เล่นก่อน เพื่อป้องกันไม่ให้คนคะแนนน้อยสุดกลายเป็น "เศษ" เสมอ
+    const shuffledActive = [...activePlayers].sort(() => Math.random() - 0.5);
     
-    // จับคู่แบบไขว้ (1 คู่กับ 4, 2 คู่กับ 3 เพื่อความสูสีในแต่ละกลุ่ม 4 คน)
+    const numToPlay = Math.min(
+      shuffledActive.length - (shuffledActive.length % 4), // หาจำนวนคนที่หาร 4 ลงตัว
+      numCourts * 4 // ไม่เกินความจุสนามทั้งหมด
+    );
+
+    if (numToPlay === 0) return alert('จำนวนผู้เล่นไม่พอที่จะจับคู่ลงสนามได้อย่างน้อย 1 สนามครับ');
+
+    const selectedToPlay = shuffledActive.slice(0, numToPlay);
+    const waitingPlayers = shuffledActive.slice(numToPlay); // เศษที่เหลือไปรอคิว
+
+    // [อัปเกรด 2]: จัดเรียงคนที่ได้เล่นตาม MMR เพื่อเตรียมทำ Snake Draft
+    selectedToPlay.sort((a, b) => b.mmr - a.mmr);
+
     const pairs = [];
-    const numToPair = sorted.length - (sorted.length % 2); // ตัดเศษ 1 คนออกจากการจับคู่
+    const half = selectedToPlay.length / 2;
     
-    for (let i = 0; i < numToPair; i += 4) {
-      if (i + 3 < numToPair) {
-        pairs.push([sorted[i], sorted[i+3]]);
-        pairs.push([sorted[i+1], sorted[i+2]]);
-      } else if (i + 1 < numToPair) {
-        // กรณีเหลือเศษ 2 คนสุดท้าย
-        pairs.push([sorted[i], sorted[i+1]]);
-      }
+    // จับคู่แบบ Snake: อันดับ 1 คู่กับ N, อันดับ 2 คู่กับ N-1 (หัวท้ายชนกัน)
+    for (let i = 0; i < half; i++) {
+      pairs.push([selectedToPlay[i], selectedToPlay[selectedToPlay.length - 1 - i]]);
     }
     
-    // จัดลงสนามตามจำนวนสนามที่เลือก
     const courts = [];
-    let pairIndex = 0;
-    const actualCourts = Math.min(numCourts, Math.floor(pairs.length / 2));
+    const actualCourts = pairs.length / 2;
     
-    if (actualCourts === 0) return alert('จำนวนผู้เล่นไม่พอที่จะจับคู่ลงสนามได้อย่างน้อย 1 สนามครับ');
-
+    // [อัปเกรด 3]: จัดทีมไขว้กัน (Cross-Match) คู่ที่เก่งสุด เจอกับคู่ที่เก่งกลางๆ เพื่อความสมดุลสูงสุด
     for (let i = 0; i < actualCourts; i++) {
       courts.push({
         id: i + 1,
-        team1: pairs[pairIndex],
-        team2: pairs[pairIndex + 1],
+        team1: pairs[i],
+        team2: pairs[pairs.length - 1 - i],
         finished: false,
-        winnerIndex: null // 1 หรือ 2
+        winnerIndex: null
       });
-      pairIndex += 2;
     }
 
-    // คู่ที่เหลือ นำไปใส่คิวรอ
-    const waiting = pairs.slice(pairIndex);
-    // คนที่ไม่มีคู่ (ถ้าจำนวนคนเป็นเลขคี่)
-    const oddPlayer = sorted.length % 2 !== 0 ? sorted[sorted.length - 1] : null;
+    // จัดกลุ่มคนรอคิวเป็นคู่ๆ
+    const waitingPairs = [];
+    for (let i = 0; i < waitingPlayers.length - 1; i += 2) {
+       waitingPairs.push([waitingPlayers[i], waitingPlayers[i+1]]);
+    }
 
     setMatchSession({
       mode: matchMode,
       courts: courts,
-      waitingPairs: waiting,
-      oddPlayer: oddPlayer,
+      waitingPairs: waitingPairs,
+      oddPlayer: waitingPlayers.length % 2 !== 0 ? waitingPlayers[waitingPlayers.length - 1] : null,
       round: 1
     });
   };
@@ -125,62 +127,99 @@ export default function App() {
   const recordResult = (courtId, winnerTeamIndex) => {
     if (!matchSession) return;
 
-    // ค้นหาข้อมูลสนาม
     const targetCourt = matchSession.courts.find(c => c.id === courtId);
     if (!targetCourt) return;
 
     const winningTeam = winnerTeamIndex === 1 ? targetCourt.team1 : targetCourt.team2;
     const losingTeam = winnerTeamIndex === 1 ? targetCourt.team2 : targetCourt.team1;
 
-    // 1. อัปเดตสถิติลงในบอร์ดผู้เล่นหลัก
+    // [อัปเกรด 4]: Smart MMR System
+    const getAvgMmr = (team) => team.reduce((sum, p) => sum + getPlayerLatest(p.id).mmr, 0) / team.length;
+    const winAvg = getAvgMmr(winningTeam);
+    const loseAvg = getAvgMmr(losingTeam);
+
+    const mmrChanges = {}; // เก็บค่า MMR ที่เปลี่ยนแปลงของแต่ละคน
+
+    // คำนวณฝั่งชนะ
+    winningTeam.forEach(p => {
+       const partner = winningTeam.find(x => x.id !== p.id);
+       let gain = 15; // แต้มพื้นฐานตอนชนะ
+       const pMmr = getPlayerLatest(p.id).mmr;
+       const partnerMmr = getPlayerLatest(partner.id).mmr;
+
+       // กฎ Team vs Team: ชนะทีมเก่งกว่าได้โบนัส, ชนะทีมอ่อนกว่าได้น้อยลง
+       if (loseAvg > winAvg + 10) gain += 3; 
+       else if (winAvg > loseAvg + 10) gain -= 3;
+
+       // กฎ แบก vs ถูกแบก: ตรวจจับว่าตัวเองเป็นคนแบกหรือถูกแบก
+       if (pMmr < partnerMmr - 10) gain += 2; // เป็นตัวอ่อนแต่ชนะได้ (ไม่เป็นตัวถ่วง) ได้โบนัส
+       else if (pMmr > partnerMmr + 10) gain -= 2; // เป็นตัวแบก ได้แต้มน้อยลงนิดนึงเพื่อไม่ให้แต้มเฟ้อ
+
+       mmrChanges[p.id] = gain;
+    });
+
+    // คำนวณฝั่งแพ้
+    losingTeam.forEach(p => {
+       const partner = losingTeam.find(x => x.id !== p.id);
+       let drop = 10; // แต้มหักพื้นฐาน
+       const pMmr = getPlayerLatest(p.id).mmr;
+       const partnerMmr = getPlayerLatest(partner.id).mmr;
+
+       // กฎ Team vs Team
+       if (loseAvg > winAvg + 10) drop += 3; // ทีมเต็งแต่ดันแพ้ (เสียฟอร์ม โดนหักเยอะ)
+       else if (winAvg > loseAvg + 10) drop -= 3; // ทีมมวยรองแพ้ (เรื่องปกติ โดนหักน้อย)
+
+       // กฎ แบก vs ถูกแบก
+       if (pMmr > partnerMmr + 10) drop -= 2; // ตัวแบกแพ้ (พยายามแล้ว โดนหักน้อยลง)
+       else if (pMmr < partnerMmr - 10) drop += 2; // ตัวถูกแบกแล้วยังแพ้ (โดนหักเยอะขึ้น)
+
+       mmrChanges[p.id] = -drop;
+    });
+
+    // อัปเดต Players Database
     const updatedPlayers = players.map(p => {
-      const isWinner = winningTeam.some(w => w.id === p.id);
-      const isLoser = losingTeam.some(l => l.id === p.id);
-      
-      if (isWinner) return { ...p, win: p.win + 1, mmr: p.mmr + 15 };
-      if (isLoser) return { ...p, lose: p.lose + 1, mmr: Math.max(10, p.mmr - 10) };
+      if (mmrChanges[p.id] !== undefined) {
+         const change = mmrChanges[p.id];
+         return {
+           ...p,
+           win: change > 0 ? p.win + 1 : p.win,
+           lose: change < 0 ? p.lose + 1 : p.lose,
+           mmr: Math.max(10, p.mmr + change) // MMR ขั้นต่ำคือ 10
+         };
+      }
       return p;
     });
     
-    // 2. สร้างประวัติการแข่งย้อนหลัง
+    // บันทึกประวัติพร้อมรายละเอียดส่วนบุคคล
     const newRecord = {
-      id: `MATCH-${Date.now().toString().slice(-6)}-C${courtId}`,
-      date: new Date().toLocaleString('th-TH', { hour12: false }),
-      team1: winningTeam.map(p => ({ name: p.name, mmr: getPlayerLatest(p.id).mmr })),
-      team2: losingTeam.map(p => ({ name: p.name, mmr: getPlayerLatest(p.id).mmr })),
+      id: `M${Date.now().toString().slice(-4)}-C${courtId}`,
+      date: new Date().toLocaleString('th-TH', { hour12: false, month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' }),
+      team1: winningTeam.map(p => ({ name: p.name, mmr: getPlayerLatest(p.id).mmr, change: `+${mmrChanges[p.id]}` })),
+      team2: losingTeam.map(p => ({ name: p.name, mmr: getPlayerLatest(p.id).mmr, change: `${mmrChanges[p.id]}` })), // ค่าติดลบมี - อยู่แล้ว
       winnerLabel: winnerTeamIndex === 1 ? 'TEAM A' : 'TEAM B',
-      matchDetails: `สนามที่ ${courtId} (${matchSession.mode === 'winner_stays' ? 'ผู้ชนะอยู่ต่อ' : 'สลับคู่'})`,
-      mmrWin: '+15',
-      mmrLose: '-10'
+      matchDetails: `สนามที่ ${courtId} • ${matchSession.mode === 'winner_stays' ? 'แชมป์อยู่ต่อ' : 'สลับคู่'}`
     };
 
     setMatchHistory(prev => [newRecord, ...prev]);
     setPlayers(updatedPlayers);
 
-    // 3. จัดการ Session สลับคู่ หรือ สลายโต๊ะ
     setMatchSession(prev => {
       const nextState = { ...prev, waitingPairs: [...prev.waitingPairs] };
       const cIdx = nextState.courts.findIndex(c => c.id === courtId);
 
       if (nextState.mode === 'winner_stays') {
-        // --- โหมดชนะอยู่ต่อ ---
         if (nextState.waitingPairs.length > 0) {
-          // ดึงคิวแรกมาลงสนาม
           const nextChallengerTeam = nextState.waitingPairs.shift();
-          // เอาคนแพ้ไปต่อท้ายคิว
           nextState.waitingPairs.push(losingTeam);
           
-          // รีเฟรชสนามให้คนชนะอยู่ต่อ เจอคนใหม่
           nextState.courts[cIdx] = {
             ...nextState.courts[cIdx],
-            team1: winningTeam, // แชมป์ยืนรอ (ฝั่ง A)
-            team2: nextChallengerTeam, // ผู้ท้าชิง (ฝั่ง B)
+            team1: winningTeam,
+            team2: nextChallengerTeam,
             finished: false,
             winnerIndex: null
           };
-          alert(`🏆 บันทึกผลสนามที่ ${courtId} สำเร็จ!\nแชมป์แข่งต่อ เจอกับคู่ของ ${nextChallengerTeam[0].name} & ${nextChallengerTeam[1].name}`);
         } else {
-          // ไม่มีคนรอคิว ให้รีเซ็ตสนามให้แข่งกันเองอีกรอบได้
           nextState.courts[cIdx] = {
             ...nextState.courts[cIdx],
             team1: winningTeam, 
@@ -188,11 +227,8 @@ export default function App() {
             finished: false,
             winnerIndex: null
           };
-          alert(`🏆 บันทึกผลสนามที่ ${courtId} สำเร็จ!\n(ไม่มีคิวรอ ให้แข่งรีแมตช์รอบต่อไปได้เลย)`);
         }
       } else {
-        // --- โหมดสลับคู่ทุกรอบ (Balanced) ---
-        // ทำเครื่องหมายว่าจบแล้ว รอให้ทุกสนามจบเพื่อจัดคู่รอบใหม่
         nextState.courts[cIdx].finished = true;
         nextState.courts[cIdx].winnerIndex = winnerTeamIndex;
       }
@@ -202,12 +238,11 @@ export default function App() {
   };
 
   const endSession = () => {
-    if (window.confirm('ปิดเซสชันการแข่งปัจจุบันใช่หรือไม่?')) {
+    if (window.confirm('ยืนยันการปิดเซสชันการแข่งปัจจุบัน?')) {
       setMatchSession(null);
     }
   }
 
-  // Check if all courts are finished (for balanced mode)
   const isAllCourtsFinished = matchSession && matchSession.mode === 'balanced' && matchSession.courts.every(c => c.finished);
 
   // ==========================================
@@ -215,9 +250,8 @@ export default function App() {
   // ==========================================
   const addPlayer = () => {
     if (!newPlayerName) return;
-    if (players.some(p => p.name.trim() === newPlayerName.trim())) return alert('ชื่อนี้มีอยู่ในระบบแล้วครับ');
+    if (players.some(p => p.name.trim().toLowerCase() === newPlayerName.trim().toLowerCase())) return alert('ชื่อนี้มีอยู่ในระบบแล้วครับ');
     
-    // ผู้เล่นใหม่ถูกเพิ่ม และตั้งค่าสถานะ isActive: true (พร้อมลงสนาม) อัตโนมัติ
     const newP = { id: Date.now(), name: newPlayerName.trim(), mmr: 100, win: 0, lose: 0, isActive: true };
     setPlayers([...players, newP]);
     setNewPlayerName('');
@@ -231,20 +265,20 @@ export default function App() {
   };
 
   const removePlayer = (id) => {
-    if (window.confirm('คุณต้องการลบผู้เล่นคนนี้ออก "อย่างถาวร" ใช่หรือไม่?\n(คำแนะนำ: หากแค่วันนี้เขาไม่ได้มาเล่น ให้กดติ๊กถูกด้านหน้าชื่อออกแทนการลบ เพื่อรักษา MMR ไว้)')) {
+    if (window.confirm('ลบผู้เล่นคนนี้ออกจากระบบถาวรใช่หรือไม่?')) {
       setPlayers(players.filter(p => p.id !== id));
     }
   };
 
   const clearHistory = () => {
-    if (window.confirm('⚠️ คุณต้องการลบประวัติการแข่งย้อนหลังทั้งหมดใช่หรือไม่? ข้อมูลนี้จะสูญหายถาวร')) {
+    if (window.confirm('⚠️ ลบประวัติทั้งหมดถาวร ใช่หรือไม่?')) {
       setMatchHistory([]);
     }
   };
 
   const resetRoster = () => {
-    if (window.confirm('⚠️ คุณต้องการรีเซ็ตสถิติผู้เล่นกลับเป็นค่าเริ่มต้นทั้งหมดใช่หรือไม่?')) {
-      localStorage.removeItem('badminton_players_v4');
+    if (window.confirm('⚠️ รีเซ็ตข้อมูลผู้เล่นกลับเป็นค่าเริ่มต้นทั้งหมด ใช่หรือไม่?')) {
+      localStorage.removeItem('badminton_players_v6');
       window.location.reload();
     }
   };
@@ -299,7 +333,7 @@ export default function App() {
   };
 
   const addCalcPlayer = () => {
-    setCalcPlayers([...calcPlayers, { id: Date.now(), name: `ผู้เล่น ${calcPlayers.length + 1}`, joinTime: '19:00', leaveTime: '21:00' }]);
+    setCalcPlayers([...calcPlayers, { id: Date.now(), name: `Player ${calcPlayers.length + 1}`, joinTime: '19:00', leaveTime: '21:00' }]);
   };
 
   const removeCalcPlayer = (id) => {
@@ -307,9 +341,8 @@ export default function App() {
   };
 
   const importRosterToCalculator = () => {
-    // ดึงเฉพาะคนที่มาร่วมเล่น (isActive === true) ลงมาคำนวณเงิน
     const activePlayers = players.filter(p => p.isActive);
-    if (activePlayers.length === 0) return alert('ไม่มีผู้เล่นที่ตั้งสถานะพร้อมลงสนาม สำหรับดึงข้อมูลครับ');
+    if (activePlayers.length === 0) return alert('ไม่มีผู้เล่นที่ตั้งสถานะพร้อมลงสนามครับ');
     
     const imported = activePlayers.map(p => ({
       id: p.id,
@@ -318,281 +351,391 @@ export default function App() {
       leaveTime: '21:00'
     }));
     setCalcPlayers(imported);
-    alert(`⚡ ดึงรายชื่อผู้เล่นจำนวน ${activePlayers.length} คนลงมายังระบบคิดเงินเรียบร้อย!`);
   };
 
   // ==========================================
-  // 9. RENDER UI
+  // 9. REUSABLE COMPONENTS & UI RENDER
   // ==========================================
+  const TabButton = ({ id, icon: Icon, label }) => (
+    <button 
+      onClick={() => setActiveTab(id)}
+      className={`flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm transition-all whitespace-nowrap
+        ${activeTab === id 
+          ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50' 
+          : 'text-slate-500 hover:text-indigo-600 hover:bg-slate-200/50'}`}
+    >
+      <Icon size={16} className={activeTab === id ? "text-indigo-600 sm:w-[18px] sm:h-[18px]" : "sm:w-[18px] sm:h-[18px]"} />
+      {label}
+    </button>
+  );
+
+  const SidebarButton = ({ id, icon: Icon, label }) => (
+    <button 
+      onClick={() => {
+        setActiveTab(id);
+        setIsSidebarOpen(false); // ปิด Sidebar เมื่อกดเลือกเมนู
+      }}
+      className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all w-full text-left
+        ${activeTab === id 
+          ? 'bg-indigo-50 text-indigo-700 border border-indigo-100/50' 
+          : 'text-slate-600 hover:text-indigo-600 hover:bg-slate-50 border border-transparent'}`}
+    >
+      <Icon size={20} className={activeTab === id ? "text-indigo-600" : "text-slate-400"} />
+      {label}
+    </button>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-10">
-      {/* Navbar */}
-      <nav className="bg-indigo-600 text-white p-4 shadow-md sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center space-x-2 text-xl font-bold cursor-pointer" onClick={() => setActiveTab('matchmaking')}>
-            <Swords size={28} />
-            <span>Badminton System</span>
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans pb-20 selection:bg-indigo-100 selection:text-indigo-900">
+      
+      {/* --- SIDEBAR OVERLAY & MENU --- */}
+      <div 
+        className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={() => setIsSidebarOpen(false)}
+      ></div>
+
+      <div 
+        className={`fixed top-0 left-0 h-full w-72 md:w-80 bg-white shadow-2xl z-[70] transform transition-transform duration-300 ease-in-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-indigo-600 to-violet-600 text-white p-2.5 rounded-xl shadow-md">
+              <Swords size={22} />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-slate-800 tracking-tight">Badminton Pro</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Manager System</p>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2 bg-indigo-700 p-1 rounded-lg">
-            <button 
-              onClick={() => setActiveTab('matchmaking')}
-              className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-md font-medium text-sm transition-all ${activeTab === 'matchmaking' ? 'bg-white text-indigo-700 shadow' : 'hover:bg-indigo-500 text-indigo-100'}`}
-            >
-              ระบบจับคู่ (Matchmaking)
-            </button>
-            <button 
-              onClick={() => setActiveTab('history')}
-              className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-md font-medium text-sm transition-all ${activeTab === 'history' ? 'bg-white text-indigo-700 shadow' : 'hover:bg-indigo-500 text-indigo-100'}`}
-            >
-              ประวัติการแข่ง (History)
-            </button>
-            <button 
-              onClick={() => setActiveTab('calculator')}
-              className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-md font-medium text-sm transition-all ${activeTab === 'calculator' ? 'bg-white text-indigo-700 shadow' : 'hover:bg-indigo-500 text-indigo-100'}`}
-            >
-              ระบบคิดเงิน (Calculator)
-            </button>
+          <button 
+            onClick={() => setIsSidebarOpen(false)}
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors active:scale-95 bg-slate-50"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-4 flex flex-col gap-2 flex-1 overflow-y-auto">
+          <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest px-4 pt-2 pb-1">Menu</h3>
+          <SidebarButton id="matchmaking" icon={Activity} label="ระบบจัดทีม (Matchmaking)" />
+          <SidebarButton id="history" icon={History} label="ประวัติย้อนหลัง (History)" />
+          <SidebarButton id="calculator" icon={DollarSign} label="บิลค่าสนาม (Calculator)" />
+        </div>
+        
+        <div className="p-6 border-t border-slate-100 bg-slate-50/50 text-center">
+           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Version 6.0 Smart MMR</p>
+        </div>
+      </div>
+
+      {/* --- HEADER --- */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 lg:px-8">
+          <div className="flex flex-row items-center justify-between py-3 sm:py-4">
+            
+            {/* Left Section: Menu Toggle + Logo */}
+            <div className="flex items-center gap-3 sm:gap-4">
+              <button 
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors active:bg-slate-200"
+              >
+                <Menu size={24} />
+              </button>
+
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="bg-gradient-to-br from-indigo-600 to-violet-600 text-white p-2 sm:p-2.5 rounded-xl sm:rounded-2xl shadow-indigo-500/30 shadow-lg">
+                  <Swords size={20} className="sm:w-6 sm:h-6" />
+                </div>
+                <div>
+                  <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-indigo-900 to-slate-800 bg-clip-text text-transparent">Badminton Pro</h1>
+                  <p className="hidden sm:block text-[10px] sm:text-[11px] font-medium text-slate-400 uppercase tracking-wider">Manager System</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation */}
+            <div className="hidden md:flex gap-1.5 sm:gap-2 bg-slate-100 p-1 sm:p-1.5 rounded-2xl w-max">
+              <TabButton id="matchmaking" icon={Activity} label="ระบบจัดทีม" />
+              <TabButton id="history" icon={History} label="ประวัติย้อนหลัง" />
+              <TabButton id="calculator" icon={DollarSign} label="บิลค่าสนาม" />
+            </div>
+
           </div>
         </div>
-      </nav>
+      </header>
 
-      <main className="max-w-5xl mx-auto mt-8 px-4">
+      <main className="max-w-6xl mx-auto mt-4 sm:mt-6 px-4 lg:px-8">
         
         {/* ========================================= */}
         {/* VIEW 1: MATCHMAKING & ROSTER */}
         {/* ========================================= */}
         {activeTab === 'matchmaking' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <h1 className="text-2xl font-bold text-slate-800 flex items-center">
-                <Trophy className="w-6 h-6 mr-2 text-yellow-500" />
-                ระบบจัดการรายชื่อและจัดทีม
-              </h1>
-              <div className="flex items-center gap-4">
-                <span className="bg-indigo-100 text-indigo-800 text-sm font-bold px-3 py-1 rounded-full">
-                  พร้อมลงสนาม: {players.filter(p=>p.isActive).length} / {players.length} คน
-                </span>
-                <button onClick={resetRoster} className="text-xs text-red-500 hover:text-red-700 font-semibold underline">
-                  รีเซ็ตข้อมูลทั้งหมด
-                </button>
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-12 gap-6">
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            
+            <div className="grid lg:grid-cols-12 gap-5 sm:gap-6 items-start">
               
-              {/* === รายชื่อผู้เล่น (ซ้าย) === */}
-              <div className="md:col-span-4 lg:col-span-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 h-fit">
-                <h2 className="font-bold text-slate-700 mb-4 flex items-center">
-                  <Users className="w-5 h-5 mr-2 text-indigo-500"/> รายชื่อผู้เล่นทั้งหมด (Database)
-                </h2>
-                
-                <div className="flex gap-2 mb-6">
-                  <input 
-                    value={newPlayerName} 
-                    onChange={(e) => setNewPlayerName(e.target.value)} 
-                    onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
-                    placeholder="เพิ่มชื่อผู้เล่นใหม่..." 
-                    className="flex-1 border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm" 
-                  />
-                  <button onClick={addPlayer} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg transition-colors flex items-center">
-                    <UserPlus size={18}/>
-                  </button>
-                </div>
-
-                <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
-                  {players.length === 0 && <p className="text-center text-slate-400 py-4">ยังไม่มีผู้เล่น</p>}
+              {/* --- ซ้าย: จัดการรายชื่อ (Roster Panel) --- */}
+              <div className="lg:col-span-4 lg:sticky lg:top-28 space-y-5 sm:space-y-6">
+                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-[0_2px_20px_-8px_rgba(0,0,0,0.05)] border border-slate-100">
+                  <div className="flex items-center justify-between mb-4 sm:mb-5">
+                    <h2 className="font-bold text-slate-800 text-base sm:text-lg flex items-center gap-2">
+                      <Users className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500"/> รายชื่อผู้เล่น
+                    </h2>
+                    <span className="bg-indigo-50 text-indigo-600 text-[10px] sm:text-xs font-bold px-2 sm:px-2.5 py-1 rounded-full border border-indigo-100">
+                      {players.filter(p=>p.isActive).length} พร้อมเล่น
+                    </span>
+                  </div>
                   
-                  {players.sort((a,b) => b.mmr - a.mmr).map((p, index) => (
-                    <div key={p.id} className={`flex justify-between items-center p-2.5 rounded-xl transition-colors group border ${p.isActive ? 'bg-slate-50 border-slate-200 shadow-sm' : 'bg-slate-100 border-slate-100 opacity-60'}`}>
-                      <div className="flex items-center gap-3">
-                        <button 
-                          onClick={() => togglePlayerActive(p.id)}
-                          className="focus:outline-none flex-shrink-0"
-                          title={p.isActive ? "พร้อมลงสนาม" : "ไม่ได้มา / พัก"}
-                        >
-                          {p.isActive 
-                            ? <CheckSquare className="text-emerald-500 w-5 h-5 hover:text-emerald-600" /> 
-                            : <Square className="text-slate-400 w-5 h-5 hover:text-slate-500" />
-                          }
-                        </button>
-                        <div>
-                          <p className={`text-sm ${p.isActive ? 'font-bold text-slate-700' : 'font-medium text-slate-500 line-through'}`}>{p.name}</p>
-                          <p className="text-[10px] text-slate-500">ชนะ {p.win} | แพ้ {p.lose}</p>
+                  {/* Input เพิ่มผู้เล่น */}
+                  <div className="flex gap-2 mb-5 sm:mb-6">
+                    <input 
+                      value={newPlayerName} 
+                      onChange={(e) => setNewPlayerName(e.target.value)} 
+                      onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
+                      placeholder="พิมพ์ชื่อ..." 
+                      className="flex-1 bg-slate-50 border border-slate-200 p-2.5 sm:p-3 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium" 
+                    />
+                    <button onClick={addPlayer} className="bg-indigo-600 hover:bg-indigo-700 text-white p-2.5 sm:p-3 rounded-2xl shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center">
+                      <UserPlus size={18} className="sm:w-5 sm:h-5"/>
+                    </button>
+                  </div>
+
+                  {/* List ผู้เล่น */}
+                  <div className="space-y-2.5 sm:space-y-3 max-h-[50vh] sm:max-h-[55vh] overflow-y-auto pr-1 sm:pr-2 custom-scrollbar">
+                    {players.length === 0 && (
+                      <div className="text-center py-8 sm:py-10 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                        <Users className="w-8 h-8 sm:w-10 sm:h-10 text-slate-300 mx-auto mb-2"/>
+                        <p className="text-xs sm:text-sm text-slate-500 font-medium">เพิ่มผู้เล่นคนแรกเลย</p>
+                      </div>
+                    )}
+                    
+                    {players.sort((a,b) => b.mmr - a.mmr).map((p) => (
+                      <div 
+                        key={p.id} 
+                        className={`group flex justify-between items-center p-3 sm:p-3.5 rounded-2xl transition-all duration-200 border
+                        ${p.isActive 
+                          ? 'bg-white border-slate-200 shadow-sm hover:border-indigo-300' 
+                          : 'bg-slate-50 border-transparent opacity-60 grayscale-[50%]'}`}
+                      >
+                        <div className="flex items-center gap-2.5 sm:gap-3">
+                          <button 
+                            onClick={() => togglePlayerActive(p.id)}
+                            className="focus:outline-none transition-transform active:scale-95"
+                          >
+                            {p.isActive 
+                              ? <CheckCircle2 className="text-emerald-500 w-5 h-5 sm:w-6 sm:h-6 fill-emerald-50" /> 
+                              : <Circle className="text-slate-300 w-5 h-5 sm:w-6 sm:h-6" />
+                            }
+                          </button>
+                          <div className="flex flex-col">
+                            <span className={`text-xs sm:text-sm ${p.isActive ? 'font-bold text-slate-800' : 'font-semibold text-slate-500 line-through decoration-slate-300'}`}>
+                              {p.name}
+                            </span>
+                            <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium tracking-wide">
+                              W {p.win} · L {p.lose}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <div className="flex flex-col items-end">
+                            <span className="text-[10px] sm:text-xs font-bold bg-slate-100 text-indigo-700 px-1.5 sm:px-2 py-0.5 rounded-md sm:rounded-lg border border-slate-200/60">
+                              {p.mmr}
+                            </span>
+                          </div>
+                          <button onClick={() => removePlayer(p.id)} className="text-slate-300 hover:text-red-500 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity bg-white p-1 rounded-md">
+                            <Trash2 size={14} className="sm:w-4 sm:h-4" />
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold bg-white border border-slate-200 px-1.5 py-0.5 rounded text-indigo-600 shadow-sm">
-                          {p.mmr}
-                        </span>
-                        <button onClick={() => removePlayer(p.id)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity" title="ลบออกจากระบบถาวร">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+
+                  <div className="pt-4 mt-2 border-t border-slate-100 text-center">
+                    <button onClick={resetRoster} className="text-[10px] sm:text-[11px] text-slate-400 hover:text-red-500 font-medium underline underline-offset-2 transition-colors">
+                      ล้างข้อมูลผู้เล่นทั้งหมด
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* === ลานประลอง (ขวา) === */}
-              <div className="md:col-span-8 lg:col-span-8 space-y-6">
+              {/* --- ขวา: ลานประลอง (Arena & Settings) --- */}
+              <div className="lg:col-span-8 space-y-5 sm:space-y-6">
                 
-                {/* --- แผงควบคุม (Settings Panel) --- */}
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
-                  <div className="flex flex-col sm:flex-row gap-4 w-full">
-                    <div className="flex-1">
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center"><Swords size={12} className="mr-1"/> จำนวนสนาม</label>
+                {/* แผงควบคุม (Settings) */}
+                <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-[0_2px_20px_-8px_rgba(0,0,0,0.05)] border border-slate-100">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[12px] sm:text-[13px] font-bold text-slate-600 flex items-center gap-1.5">
+                        <Swords size={14} className="text-indigo-500"/> จำนวนสนาม
+                      </label>
                       <select 
                         disabled={matchSession !== null}
                         value={numCourts} 
                         onChange={(e) => setNumCourts(Number(e.target.value))}
-                        className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400"
+                        className="w-full p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-xs sm:text-sm font-medium text-slate-700 disabled:opacity-50 transition-all appearance-none"
                       >
-                        <option value={1}>1 สนาม (รองรับสูงสุด 4 คน)</option>
-                        <option value={2}>2 สนาม (รองรับสูงสุด 8 คน)</option>
-                        <option value={3}>3 สนาม (รองรับสูงสุด 12 คน)</option>
-                        <option value={4}>4 สนาม (รองรับสูงสุด 16 คน)</option>
-                        <option value={5}>5 สนาม (รองรับสูงสุด 20 คน)</option>
+                        {[1,2,3,4,5].map(n => (
+                          <option key={n} value={n}>{n} สนาม (สูงสุด {n*4} คน)</option>
+                        ))}
                       </select>
                     </div>
-                    <div className="flex-1">
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center"><Settings size={12} className="mr-1"/> โหมดการเล่น</label>
+                    
+                    <div className="space-y-1.5">
+                      <label className="text-[12px] sm:text-[13px] font-bold text-slate-600 flex items-center gap-1.5">
+                        <Settings size={14} className="text-indigo-500"/> โหมดการจับคู่
+                      </label>
                       <select 
                         disabled={matchSession !== null}
                         value={matchMode} 
                         onChange={(e) => setMatchMode(e.target.value)}
-                        className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400"
+                        className="w-full p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-xs sm:text-sm font-medium text-slate-700 disabled:opacity-50 transition-all appearance-none"
                       >
-                        <option value="winner_stays">👑 ผู้ชนะอยู่ต่อ (สลับทีมรอเสียบ)</option>
-                        <option value="balanced">🔄 จัดใหม่ทุกรอบ (กระจายความหลากหลาย)</option>
+                        <option value="winner_stays">👑 แชมป์อยู่ต่อ (สลับผู้ท้าชิง)</option>
+                        <option value="balanced">🔄 สุ่มใหม่ทุกรอบ (กระจายคู่)</option>
                       </select>
                     </div>
                   </div>
 
-                  <div className="w-full md:w-auto flex-shrink-0 mt-2 md:mt-0 flex flex-col justify-end">
+                  <div className="mt-4 sm:mt-5 pt-4 sm:pt-5 border-t border-slate-100 flex justify-end">
                     {!matchSession ? (
                       <button 
                         onClick={handleStartSession} 
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                        className="w-full sm:w-auto bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-sm sm:text-base font-bold shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all flex items-center justify-center gap-2 transform active:scale-95"
                       >
-                        <Play size={18} /> เริ่มเซสชันการแข่ง
+                        <Play size={16} fill="currentColor" className="sm:w-[18px] sm:h-[18px]" /> เริ่มเซสชันการแข่ง
                       </button>
                     ) : (
                       <button 
                         onClick={endSession} 
-                        className="w-full bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                        className="w-full sm:w-auto bg-white border border-red-200 text-red-500 hover:bg-red-50 px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl text-sm sm:text-base font-bold shadow-sm transition-all flex items-center justify-center gap-2"
                       >
-                        <StopCircle size={18} /> ยุติเซสชัน
+                        <StopCircle size={16} className="sm:w-[18px] sm:h-[18px]" /> ยุติการแข่งขัน
                       </button>
                     )}
                   </div>
                 </div>
 
-                {/* --- แสดงผลการจัดสนาม --- */}
+                {/* สนามแข่ง (Arena) */}
                 {!matchSession ? (
-                   <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-12 rounded-2xl flex flex-col items-center justify-center text-center text-slate-400">
-                     <Swords className="w-16 h-16 mb-4 opacity-50" />
-                     <p className="font-bold text-lg text-slate-500">ยังไม่มีการแข่งขัน</p>
-                     <p className="text-sm mt-2">ติ๊กเลือกคนที่พร้อมแข่งด้านซ้าย เลือกระบบสนาม แล้วกด "เริ่มเซสชัน"</p>
+                   <div className="bg-slate-50/50 border-2 border-dashed border-slate-200 p-8 sm:p-16 rounded-3xl flex flex-col items-center justify-center text-center">
+                     <div className="bg-white p-3 sm:p-4 rounded-full shadow-sm mb-3 sm:mb-4">
+                        <Swords className="w-8 h-8 sm:w-10 sm:h-10 text-indigo-300" />
+                     </div>
+                     <h3 className="font-bold text-base sm:text-lg text-slate-700 mb-1">ยังไม่มีการจับคู่</h3>
+                     <p className="text-xs sm:text-sm text-slate-500 max-w-sm">เลือกผู้เล่นที่พร้อมลงสนามทางซ้ายมือ ปรับตั้งค่าสนาม แล้วกด "เริ่มเซสชันการแข่ง"</p>
                    </div>
                 ) : (
-                  <div className="bg-indigo-900 rounded-2xl shadow-lg p-5 relative overflow-hidden animate-in zoom-in-95 duration-300">
-                    <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 bg-indigo-700 rounded-full blur-3xl opacity-50"></div>
+                  <div className="bg-[#0B1120] rounded-[2rem] shadow-2xl p-5 sm:p-6 lg:p-8 relative overflow-hidden border border-slate-800">
+                    {/* Background Effects */}
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600 rounded-full blur-[100px] opacity-20 pointer-events-none"></div>
+                    <div className="absolute bottom-0 left-0 w-64 h-64 bg-emerald-600 rounded-full blur-[100px] opacity-10 pointer-events-none"></div>
                     
-                    <div className="flex items-center justify-between border-b border-indigo-800 pb-3 mb-5">
-                      <h3 className="font-bold text-white text-lg flex items-center">
-                        <Trophy className="w-5 h-5 mr-2 text-yellow-400" />
-                        กำลังแข่งขัน ({matchSession.mode === 'winner_stays' ? 'โหมดชนะอยู่ต่อ' : 'โหมดสลับใหม่ทุกรอบ'})
-                      </h3>
-                      <span className="text-xs bg-indigo-800 text-indigo-200 px-3 py-1 rounded-full font-bold shadow-sm border border-indigo-700">
-                        เปิดใช้งาน {matchSession.courts.length} สนาม
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-5 sm:pb-6 mb-5 sm:mb-6 border-b border-white/10 relative z-10 gap-3 sm:gap-4">
+                      <div>
+                        <h3 className="font-black text-white text-lg sm:text-xl flex items-center gap-2 tracking-wide">
+                          <span className="relative flex h-2.5 w-2.5 sm:h-3 sm:w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 sm:h-3 sm:w-3 bg-red-500"></span>
+                          </span>
+                          LIVE ARENA
+                        </h3>
+                        <p className="text-indigo-200/60 text-xs sm:text-sm mt-1 font-medium">
+                          {matchSession.mode === 'winner_stays' ? 'โหมด: แชมป์อยู่ต่อ' : 'โหมด: สลับใหม่ทุกรอบ'}
+                        </p>
+                      </div>
+                      <span className="bg-white/5 backdrop-blur-md text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold border border-white/10 flex items-center gap-1.5 sm:gap-2 w-max">
+                        <Swords size={14} className="text-indigo-400 sm:w-4 sm:h-4"/> {matchSession.courts.length} สนามทำงาน
                       </span>
                     </div>
                     
-                    {/* วนลูปแสดงสนาม */}
-                    <div className="grid lg:grid-cols-2 gap-4">
+                    <div className="grid md:grid-cols-2 gap-4 sm:gap-6 relative z-10">
                       {matchSession.courts.map((court) => (
-                        <div key={court.id} className="bg-indigo-950/60 p-4 rounded-xl border border-indigo-800/80 shadow-inner flex flex-col">
-                          <h4 className="text-indigo-200 text-sm font-bold mb-3 flex items-center justify-between">
-                            <span>🏸 สนามที่ {court.id}</span>
-                            {court.finished && <span className="text-green-400 text-[10px] bg-green-500/20 px-2 py-0.5 rounded uppercase">จบแล้ว</span>}
-                          </h4>
+                        <div key={court.id} className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-5 flex flex-col">
+                          
+                          <div className="flex justify-between items-center mb-4 sm:mb-5">
+                            <span className="bg-indigo-500/20 text-indigo-300 text-[10px] sm:text-xs font-black tracking-widest uppercase px-2.5 sm:px-3 py-1 rounded-md sm:rounded-lg border border-indigo-500/30">
+                              Court {court.id}
+                            </span>
+                            {court.finished && (
+                              <span className="text-[9px] sm:text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg uppercase flex items-center gap-1">
+                                <CheckCircle2 size={10} className="sm:w-3 sm:h-3"/> Match Ended
+                              </span>
+                            )}
+                          </div>
 
-                          <div className="flex-1 flex flex-col justify-center space-y-3 relative">
-                            {/* VS Badge */}
-                            <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-indigo-900 rounded-full p-2 shadow z-10 border border-indigo-800">
-                              <span className="font-black text-red-400 text-xs">VS</span>
-                            </div>
-
-                            {/* Team 1 (A) */}
-                            <div className={`p-3 rounded-lg border transition-all ${court.finished ? 'bg-slate-800/50 border-slate-700/50 opacity-50' : 'bg-white/10 backdrop-blur-md border-white/10 shadow-sm'}`}>
-                              <div className="space-y-1.5 mb-3">
+                          <div className="flex-1 flex flex-col space-y-3 sm:space-y-4">
+                            
+                            {/* Team 1 (Top) */}
+                            <div className={`relative p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all duration-300 ${court.finished ? 'bg-white/5 border-white/5 opacity-50 grayscale' : 'bg-gradient-to-br from-indigo-500/10 to-transparent border-indigo-500/20 hover:border-indigo-500/40'}`}>
+                              <div className="flex flex-col gap-1.5 sm:gap-2 mb-3 sm:mb-4">
                                 {court.team1.map(p => (
-                                  <div key={p.id} className="bg-white/90 rounded px-2 py-1.5 shadow-sm flex justify-between items-center text-sm">
-                                    <span className="font-bold text-indigo-950">{p.name}</span>
-                                    <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-bold">{getPlayerLatest(p.id).mmr}</span>
+                                  <div key={p.id} className="flex justify-between items-center">
+                                    <span className="font-bold text-white text-xs sm:text-sm">{p.name}</span>
+                                    <span className="text-[9px] sm:text-[10px] font-mono bg-white/10 text-indigo-200 px-1.5 sm:px-2 py-0.5 rounded-md">{getPlayerLatest(p.id).mmr}</span>
                                   </div>
                                 ))}
                               </div>
                               {!court.finished && (
-                                <button onClick={() => recordResult(court.id, 1)} className="w-full bg-blue-500 hover:bg-blue-400 text-white py-1.5 rounded font-bold text-xs shadow transition-colors">
-                                  ทีมบนชนะ 🏆
+                                <button onClick={() => recordResult(court.id, 1)} className="w-full bg-indigo-500 hover:bg-indigo-400 text-white py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-[11px] sm:text-xs shadow-lg shadow-indigo-500/20 transition-all active:scale-95 flex justify-center items-center gap-1.5 sm:gap-2">
+                                  <Award size={12} className="sm:w-3.5 sm:h-3.5" /> ทีมบนชนะ
                                 </button>
                               )}
                             </div>
 
-                            {/* Team 2 (B) */}
-                            <div className={`p-3 rounded-lg border transition-all ${court.finished ? 'bg-slate-800/50 border-slate-700/50 opacity-50' : 'bg-white/10 backdrop-blur-md border-white/10 shadow-sm'}`}>
-                              <div className="space-y-1.5 mb-3">
+                            {/* VS Divider */}
+                            <div className="relative flex items-center justify-center h-2">
+                               <div className="absolute w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+                               <span className="bg-[#0B1120] text-slate-500 text-[9px] sm:text-[10px] font-black italic px-2 z-10 border border-white/5 rounded-full py-0.5">VS</span>
+                            </div>
+
+                            {/* Team 2 (Bottom) */}
+                            <div className={`relative p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all duration-300 ${court.finished ? 'bg-white/5 border-white/5 opacity-50 grayscale' : 'bg-gradient-to-br from-rose-500/10 to-transparent border-rose-500/20 hover:border-rose-500/40'}`}>
+                              <div className="flex flex-col gap-1.5 sm:gap-2 mb-3 sm:mb-4">
                                 {court.team2.map(p => (
-                                  <div key={p.id} className="bg-white/90 rounded px-2 py-1.5 shadow-sm flex justify-between items-center text-sm">
-                                    <span className="font-bold text-indigo-950">{p.name}</span>
-                                    <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-bold">{getPlayerLatest(p.id).mmr}</span>
+                                  <div key={p.id} className="flex justify-between items-center">
+                                    <span className="font-bold text-white text-xs sm:text-sm">{p.name}</span>
+                                    <span className="text-[9px] sm:text-[10px] font-mono bg-white/10 text-rose-200 px-1.5 sm:px-2 py-0.5 rounded-md">{getPlayerLatest(p.id).mmr}</span>
                                   </div>
                                 ))}
                               </div>
                               {!court.finished && (
-                                <button onClick={() => recordResult(court.id, 2)} className="w-full bg-red-500 hover:bg-red-400 text-white py-1.5 rounded font-bold text-xs shadow transition-colors">
-                                  ทีมล่างชนะ 🏆
+                                <button onClick={() => recordResult(court.id, 2)} className="w-full bg-rose-500 hover:bg-rose-400 text-white py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-[11px] sm:text-xs shadow-lg shadow-rose-500/20 transition-all active:scale-95 flex justify-center items-center gap-1.5 sm:gap-2">
+                                  <Award size={12} className="sm:w-3.5 sm:h-3.5" /> ทีมล่างชนะ
                                 </button>
                               )}
                             </div>
+
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    {/* คิวรอ (Waiting Queue) */}
+                    {/* Waiting Queue */}
                     {matchSession.waitingPairs && matchSession.waitingPairs.length > 0 && (
-                      <div className="bg-black/20 border border-white/10 rounded-xl p-4 mt-5">
-                        <h4 className="font-bold text-sm text-indigo-200 flex items-center gap-1.5 mb-3">
-                          <Clock size={16} /> คิวรอเสียบสนามถัดไป ({matchSession.waitingPairs.length} คู่)
+                      <div className="mt-5 sm:mt-6 bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl p-4 sm:p-5 relative z-10">
+                        <h4 className="font-bold text-[10px] sm:text-xs text-slate-400 uppercase tracking-widest flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+                          <Clock size={12} className="sm:w-3.5 sm:h-3.5" /> คิวรอเสียบสนามถัดไป ({matchSession.waitingPairs.length} คู่)
                         </h4>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2 sm:gap-3">
                           {matchSession.waitingPairs.map((pair, idx) => (
-                            <div key={idx} className="bg-indigo-950 border border-indigo-800 px-3 py-1.5 rounded-lg text-xs flex items-center gap-2 shadow-sm">
+                            <div key={idx} className="bg-black/40 border border-white/5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2">
                               <span className="font-bold text-white">{pair[0].name}</span>
-                              <span className="text-indigo-400/50">&</span>
+                              <span className="text-slate-500 text-[10px] sm:text-xs px-0.5 sm:px-1">+</span>
                               <span className="font-bold text-white">{pair[1].name}</span>
-                              {idx === 0 && <span className="ml-1 bg-amber-500 text-amber-950 px-1.5 py-0.5 rounded-[4px] text-[10px] font-black">คิวถัดไป!</span>}
+                              {idx === 0 && <span className="ml-1.5 sm:ml-2 bg-emerald-500 text-emerald-950 px-1.5 sm:px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black">NEXT</span>}
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
-                    
-                    {matchSession.oddPlayer && (
-                      <div className="mt-4 text-xs text-indigo-300">
-                        * หมายเหตุ: มีผู้เล่น 1 คนรอเข้าคู่คือ <span className="font-bold text-white">{matchSession.oddPlayer.name}</span>
-                      </div>
-                    )}
 
-                    {/* ปุ่มสำหรับโหมด Balanced เพื่อสร้างรอบต่อไป */}
+                    {/* Start Next Round Button */}
                     {isAllCourtsFinished && (
                       <button 
                         onClick={handleStartSession} 
-                        className="w-full mt-6 bg-emerald-500 hover:bg-emerald-400 text-white py-3.5 rounded-xl font-bold text-sm shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all flex justify-center items-center gap-2 animate-bounce"
+                        className="w-full mt-5 sm:mt-6 bg-white text-[#0B1120] py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:shadow-[0_0_40px_rgba(255,255,255,0.4)] transition-all flex justify-center items-center gap-2"
                       >
-                        <RefreshCw size={18} /> เริ่มรอบต่อไป (กระจายสลับคู่ใหม่ทั้งหมด)
+                        <RefreshCw size={16} className="sm:w-[18px] sm:h-[18px]" /> เริ่มจับคู่รอบต่อไป
                       </button>
                     )}
                   </div>
@@ -603,233 +746,268 @@ export default function App() {
         )}
 
         {/* ========================================= */}
-        {/* VIEW 2: MATCH HISTORY VIEW */}
+        {/* VIEW 2: MATCH HISTORY */}
         {/* ========================================= */}
         {activeTab === 'history' && (
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-slate-800 flex items-center">
-                <History className="w-7 h-7 mr-2 text-indigo-600 bg-indigo-50 p-1 rounded-full" />
-                ประวัติการแข่งขันและปรับคะแนนย้อนหลัง
-              </h2>
-              {matchHistory.length > 0 && (
-                <button onClick={clearHistory} className="text-xs text-red-500 hover:text-red-700 font-semibold underline">
-                  ล้างประวัติทั้งหมด
-                </button>
-              )}
-            </div>
-
-            <p className="text-slate-500 text-sm">
-              ผลการแข่งขันทั้งหมดจะถูกบันทึกไว้อย่างปลอดภัยลงใน LocalStorage ของคุณ
-            </p>
-
-            {matchHistory.length === 0 ? (
-              <div className="py-12 text-center text-slate-400">
-                <History className="w-16 h-16 mx-auto text-slate-200 mb-3" />
-                <p>ยังไม่มีประวัติการแข่งในระบบ ลองเริ่มจับคู่และลงคะแนนเพื่อให้สถิติบันทึกเข้ามาครับ</p>
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto">
+            <div className="bg-white p-5 sm:p-6 md:p-8 rounded-3xl shadow-[0_2px_20px_-8px_rgba(0,0,0,0.05)] border border-slate-100">
+              <div className="flex flex-row items-center justify-between gap-4 mb-6 sm:mb-8">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight">Match History</h2>
+                  <p className="text-slate-500 text-xs sm:text-sm mt-1">ประวัติการแข่งขันและการปรับ MMR ระดับบุคคล</p>
+                </div>
+                {matchHistory.length > 0 && (
+                  <button onClick={clearHistory} className="text-[10px] sm:text-xs bg-red-50 text-red-600 hover:bg-red-100 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl font-bold transition-colors whitespace-nowrap">
+                    ล้างประวัติ
+                  </button>
+                )}
               </div>
-            ) : (
-              <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 animate-fade-in">
-                {matchHistory.map((match) => (
-                  <div key={match.id} className="border border-slate-150 rounded-xl p-4 shadow-sm hover:shadow transition-shadow bg-slate-50 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div className="flex-1 w-full">
-                      <div className="flex items-center justify-between md:justify-start gap-4 mb-3">
-                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">{match.id}</span>
-                        <span className="text-xs text-slate-400 flex items-center gap-1"><Clock size={12}/> {match.date}</span>
-                        <span className="text-xs font-medium text-slate-500 hidden sm:inline">{match.matchDetails}</span>
+
+              {matchHistory.length === 0 ? (
+                <div className="py-16 sm:py-20 text-center text-slate-400 bg-slate-50 rounded-2xl sm:rounded-3xl border border-slate-100">
+                  <History className="w-10 h-10 sm:w-12 sm:h-12 mx-auto text-slate-300 mb-3 sm:mb-4" />
+                  <p className="text-sm sm:text-base font-medium">ยังไม่มีประวัติการแข่งขัน</p>
+                </div>
+              ) : (
+                <div className="space-y-3 sm:space-y-4">
+                  {matchHistory.map((match) => (
+                    <div key={match.id} className="group bg-white border border-slate-200 rounded-2xl p-4 md:p-5 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all flex flex-col md:flex-row gap-4 sm:gap-6">
+                      
+                      {/* Meta Info */}
+                      <div className="md:w-1/4 flex flex-row md:flex-col justify-between md:justify-center border-b md:border-b-0 md:border-r border-slate-100 pb-3 md:pb-0 md:pr-4">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] sm:text-[10px] font-black text-indigo-500 bg-indigo-50 px-2 py-1 rounded-md w-max mb-1.5 uppercase">{match.id}</span>
+                          <span className="text-[11px] sm:text-xs text-slate-500 font-medium">{match.date}</span>
+                        </div>
+                        <span className="text-[11px] sm:text-xs text-slate-400 text-right md:text-left self-end md:self-auto md:mt-1">{match.matchDetails}</span>
                       </div>
                       
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="p-2.5 rounded-lg border border-green-200 bg-green-50/30">
-                          <p className="text-xs font-bold text-green-700 mb-1">ทีมชนะ ({match.winnerLabel})</p>
-                          <div className="space-y-0.5 text-sm">
-                            {match.team1.map((p, i) => (
-                              <div key={i} className="text-slate-700 flex justify-between">
-                                <span className="font-medium">{p.name}</span>
-                                <span className="text-xs text-slate-400">(MMR เดิม {p.mmr})</span>
-                              </div>
-                            ))}
-                          </div>
+                      {/* Teams & Score (Individual MMR Display) */}
+                      <div className="flex-1 grid grid-cols-2 gap-3 sm:gap-4 items-center relative">
+                        {/* Winner */}
+                        <div className="bg-emerald-50/50 p-2.5 sm:p-3 rounded-xl border border-emerald-100 relative">
+                          <div className="absolute -top-2 -right-2 bg-emerald-500 text-white p-1 rounded-full shadow-sm"><Trophy size={10} className="sm:w-3 sm:h-3"/></div>
+                          <p className="text-[9px] sm:text-[10px] font-bold text-emerald-600 uppercase mb-1.5 sm:mb-2 tracking-wider">Winner</p>
+                          {match.team1.map((p, i) => (
+                            <div key={i} className="flex justify-between items-center text-xs sm:text-sm mb-1.5 last:mb-0">
+                              <span className="font-bold text-slate-700">{p.name}</span>
+                              <span className="text-[10px] font-black text-emerald-600 bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-200/50">{p.change || '+15'}</span>
+                            </div>
+                          ))}
                         </div>
 
-                        <div className="p-2.5 rounded-lg border border-slate-100 bg-white">
-                          <p className="text-xs font-bold text-slate-500 mb-1">ทีมแพ้</p>
-                          <div className="space-y-0.5 text-sm">
-                            {match.team2.map((p, i) => (
-                              <div key={i} className="text-slate-700 flex justify-between">
-                                <span>{p.name}</span>
-                                <span className="text-xs text-slate-400">(MMR เดิม {p.mmr})</span>
-                              </div>
-                            ))}
-                          </div>
+                        {/* Loser */}
+                        <div className="bg-slate-50 p-2.5 sm:p-3 rounded-xl border border-slate-100">
+                          <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase mb-1.5 sm:mb-2 tracking-wider">Loser</p>
+                          {match.team2.map((p, i) => (
+                            <div key={i} className="flex justify-between items-center text-xs sm:text-sm mb-1.5 last:mb-0">
+                              <span className="font-medium text-slate-600">{p.name}</span>
+                              <span className="text-[10px] font-black text-rose-500 bg-rose-100/80 px-1.5 py-0.5 rounded border border-rose-200/50">{p.change || '-10'}</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    </div>
 
-                    <div className="bg-white border p-3 rounded-lg text-center w-full md:w-32 flex md:flex-col justify-around md:justify-center gap-2">
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">ปรับทีมชนะ</p>
-                        <p className="text-xs font-black text-green-600">{match.mmrWin} MMR</p>
-                      </div>
-                      <div className="border-l md:border-l-0 md:border-t border-slate-100 pt-0 md:pt-1">
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">ปรับทีมแพ้</p>
-                        <p className="text-xs font-black text-red-500">{match.mmrLose} MMR</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ========================================= */}
-        {/* VIEW 3: DYNAMIC COURT FEE CALCULATOR */}
-        {/* ========================================= */}
-        {activeTab === 'calculator' && (
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-              <h2 className="text-2xl font-bold text-slate-800 flex items-center">
-                <DollarSign className="w-7 h-7 mr-2 text-green-500 bg-green-100 p-1 rounded-full" />
-                ระบบคิดเงิน (Pro-Rata Calculator)
-              </h2>
-              <button 
-                onClick={importRosterToCalculator}
-                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-3 py-2 rounded-lg transition-colors flex items-center gap-1 border border-indigo-200"
-              >
-                <Users size={14}/> ดึงรายชื่อคนที่พร้อมเล่นลงมาคิดเงิน ({players.filter(p=>p.isActive).length} คน)
-              </button>
-            </div>
-            
-            <p className="text-slate-500 mb-6 text-sm">
-              คำนวณแบ่งจ่ายค่าสนามและค่าลูกแบดตาม <strong className="text-indigo-600">"ระยะเวลาที่เล่นจริงของแต่ละคน"</strong> เพื่อความเที่ยงตรงและยุติธรรมสำหรับผู้เล่นที่มาสลับเวลาลงเล่น
-            </p>
-
-            <div className="grid md:grid-cols-12 gap-8 mb-8">
-              
-              {/* ตั้งค่าค่าใช้จ่าย */}
-              <div className="md:col-span-4 bg-slate-50 p-5 rounded-xl border border-slate-200">
-                <h3 className="font-bold text-slate-700 mb-4 flex items-center"><DollarSign className="w-4 h-4 mr-1"/> ยอดค่าใช้จ่ายรวม</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-slate-600 mb-1 font-medium">ค่าสนามรวม (บาท)</label>
-                    <input 
-                      type="number" 
-                      value={calcFees.court} 
-                      onChange={(e) => setCalcFees({...calcFees, court: e.target.value})}
-                      className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-slate-600 mb-1 font-medium">ค่าลูกแบดรวม (บาท)</label>
-                    <input 
-                      type="number" 
-                      value={calcFees.shuttlecock} 
-                      onChange={(e) => setCalcFees({...calcFees, shuttlecock: e.target.value})}
-                      className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
-                  </div>
-                  <div className="pt-4 border-t border-slate-200">
-                    <div className="flex justify-between font-bold text-xl text-slate-800">
-                      <span>รวมต้องจ่าย:</span>
-                      <span className="text-green-600">{Number(calcFees.court) + Number(calcFees.shuttlecock)} ฿</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* รายชื่อและเวลา */}
-              <div className="md:col-span-8">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-slate-700 flex items-center"><Clock className="w-4 h-4 mr-2"/> ผู้เล่นและเวลาลงสนาม</h3>
-                  <button onClick={addCalcPlayer} className="text-sm bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-1.5 rounded-lg font-medium flex items-center transition-colors">
-                    + เพิ่มคนจ่ายตังค์
-                  </button>
-                </div>
-                
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
-                  {calcPlayers.map((player, index) => (
-                    <div key={player.id} className="flex flex-col sm:flex-row gap-3 items-center bg-white p-3 rounded-xl border border-slate-200 hover:border-indigo-300 transition-colors shadow-sm">
-                      <div className="flex-1 w-full">
-                        <label className="block text-xs text-slate-500 mb-1">ชื่อผู้เล่น</label>
-                        <input 
-                          type="text" 
-                          value={player.name} 
-                          onChange={(e) => updateCalcPlayerTime(index, 'name', e.target.value)}
-                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-indigo-500 outline-none" 
-                        />
-                      </div>
-                      <div className="w-full sm:w-28">
-                        <label className="block text-xs text-slate-500 mb-1">เวลาเข้า</label>
-                        <input 
-                          type="time" 
-                          value={player.joinTime} 
-                          onChange={(e) => updateCalcPlayerTime(index, 'joinTime', e.target.value)}
-                          className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-indigo-500 outline-none" 
-                        />
-                      </div>
-                      <div className="w-full sm:w-28">
-                        <label className="block text-xs text-slate-500 mb-1">เวลาออก</label>
-                        <input 
-                          type="time" 
-                          value={player.leaveTime} 
-                          onChange={(e) => updateCalcPlayerTime(index, 'leaveTime', e.target.value)}
-                          className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-indigo-500 outline-none" 
-                        />
-                      </div>
-                      <div className="pt-5">
-                         <button onClick={() => removeCalcPlayer(player.id)} className="text-red-400 hover:text-red-600 p-2">
-                           <Trash2 size={18} />
-                         </button>
-                      </div>
                     </div>
                   ))}
                 </div>
-              </div>
+              )}
             </div>
+          </div>
+        )}
 
-            {/* ผลลัพธ์การคำนวณ */}
-            <div className="bg-indigo-950 text-white rounded-2xl overflow-hidden shadow-xl border border-indigo-900">
-              <div className="p-4 border-b border-indigo-800 bg-indigo-900 flex justify-between items-center">
-                <h3 className="font-bold flex items-center text-lg">
-                  <DollarSign className="w-5 h-5 mr-2 text-green-400" />
-                  สรุปยอดเรียกเก็บเงินรายบุคคล
-                </h3>
+        {/* ========================================= */}
+        {/* VIEW 3: CALCULATOR */}
+        {/* ========================================= */}
+        {activeTab === 'calculator' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="bg-white rounded-3xl shadow-[0_2px_20px_-8px_rgba(0,0,0,0.05)] border border-slate-100 overflow-hidden">
+              
+              <div className="p-5 sm:p-6 md:p-8 bg-slate-900 text-white relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 rounded-full blur-[100px] opacity-20"></div>
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-black flex items-center gap-2">
+                      <DollarSign className="w-6 h-6 sm:w-8 sm:h-8 text-emerald-400" />
+                      ระบบหารค่าสนาม (Pro-Rata)
+                    </h2>
+                    <p className="text-slate-400 text-xs sm:text-sm mt-1.5 sm:mt-2 max-w-md">
+                      คำนวณเงินตาม "นาทีที่เล่นจริง" เพื่อความยุติธรรมสำหรับคนที่มาไม่พร้อมกัน
+                    </p>
+                  </div>
+                  <button 
+                    onClick={importRosterToCalculator}
+                    className="bg-white/10 hover:bg-white/20 text-white px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold backdrop-blur-md transition-all flex items-center justify-center gap-2 border border-white/10"
+                  >
+                    <Users size={14} className="sm:w-4 sm:h-4"/> ดึงชื่อคนพร้อมเล่น ({players.filter(p=>p.isActive).length})
+                  </button>
+                </div>
               </div>
-              <div className="p-0 overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[500px]">
-                  <thead>
-                    <tr className="bg-indigo-950 text-indigo-300 text-sm border-b border-indigo-800">
-                      <th className="p-4 py-3 font-medium">ชื่อผู้เล่น</th>
-                      <th className="p-4 py-3 font-medium text-center">เวลาที่เล่นจริง</th>
-                      <th className="p-4 py-3 font-medium text-right">ยอดที่ต้องโอน (บาท)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-indigo-800/50">
-                    {calcResults.map((result, idx) => (
-                      <tr key={idx} className="hover:bg-indigo-800/30 transition-colors">
-                        <td className="p-4 font-medium flex items-center">
-                          <div className="w-8 h-8 rounded-full bg-indigo-800 flex items-center justify-center mr-3 text-indigo-200 text-xs font-bold uppercase">
-                            {result.name.substring(0, 2)}
+
+              <div className="p-4 sm:p-6 md:p-8">
+                <div className="grid lg:grid-cols-12 gap-6 md:gap-8">
+                  
+                  {/* Left: Input */}
+                  <div className="lg:col-span-5 space-y-6 sm:space-y-8">
+                    
+                    {/* Bill Settings */}
+                    <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200">
+                      <h3 className="font-bold text-slate-800 text-sm sm:text-base mb-4 sm:mb-5 flex items-center gap-2"><Settings size={16} className="text-indigo-500 sm:w-[18px] sm:h-[18px]"/> ค่าใช้จ่ายรวม</h3>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                          <div className="relative">
+                            <label className="block text-[10px] sm:text-xs font-bold text-slate-500 mb-1.5 uppercase">ค่าสนาม (บาท)</label>
+                            <input 
+                              type="number" 
+                              value={calcFees.court} 
+                              onChange={(e) => setCalcFees({...calcFees, court: e.target.value})}
+                              className="w-full pl-3 sm:pl-4 pr-8 sm:pr-10 py-2.5 sm:py-3 bg-white border border-slate-200 rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-slate-800 font-bold font-mono text-sm sm:text-base transition-all"
+                            />
+                            <span className="absolute right-3 sm:right-4 bottom-2.5 sm:bottom-3 text-slate-400 font-bold text-xs sm:text-base">฿</span>
                           </div>
-                          {result.name}
-                        </td>
-                        <td className="p-4 text-center text-indigo-200 font-medium">
-                          {result.minutesPlayed} <span className="text-xs text-indigo-400">นาที</span>
-                        </td>
-                        <td className="p-4 text-right font-black text-green-400 text-xl">
-                          {result.feeToPay} <span className="text-sm font-normal text-green-600">฿</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          <div className="relative">
+                            <label className="block text-[10px] sm:text-xs font-bold text-slate-500 mb-1.5 uppercase">ค่าลูกแบด (บาท)</label>
+                            <input 
+                              type="number" 
+                              value={calcFees.shuttlecock} 
+                              onChange={(e) => setCalcFees({...calcFees, shuttlecock: e.target.value})}
+                              className="w-full pl-3 sm:pl-4 pr-8 sm:pr-10 py-2.5 sm:py-3 bg-white border border-slate-200 rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-slate-800 font-bold font-mono text-sm sm:text-base transition-all"
+                            />
+                            <span className="absolute right-3 sm:right-4 bottom-2.5 sm:bottom-3 text-slate-400 font-bold text-xs sm:text-base">฿</span>
+                          </div>
+                        </div>
+                        <div className="pt-4 sm:pt-5 mt-2 border-t border-slate-200 flex justify-between items-end">
+                          <span className="text-xs sm:text-sm font-bold text-slate-500">ยอดรวมทั้งหมด</span>
+                          <span className="text-2xl sm:text-3xl font-black text-emerald-600 tracking-tight">
+                            {Number(calcFees.court) + Number(calcFees.shuttlecock)} <span className="text-sm sm:text-lg">฿</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Add Player Times */}
+                    <div>
+                      <div className="flex justify-between items-center mb-3 sm:mb-4">
+                        <h3 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2"><Clock size={16} className="text-indigo-500 sm:w-[18px] sm:h-[18px]"/> ผู้เล่นและเวลา</h3>
+                        <button onClick={addCalcPlayer} className="text-[10px] sm:text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2.5 sm:px-3 py-1.5 rounded-lg font-bold transition-colors">
+                          + เพิ่มคน
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-2.5 sm:space-y-3 max-h-[350px] sm:max-h-[400px] overflow-y-auto pr-1 sm:pr-2 custom-scrollbar">
+                        {calcPlayers.map((player, index) => (
+                          <div key={player.id} className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 shadow-sm relative group">
+                            <button onClick={() => removeCalcPlayer(player.id)} className="absolute -top-1.5 sm:-top-2 -right-1.5 sm:-right-2 bg-white border border-slate-200 text-slate-400 hover:text-red-500 p-1 sm:p-1.5 rounded-full shadow-sm opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Trash2 size={10} className="sm:w-3 sm:h-3" />
+                            </button>
+                            <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                              <div className="col-span-2">
+                                <input 
+                                  type="text" 
+                                  value={player.name} 
+                                  onChange={(e) => updateCalcPlayerTime(index, 'name', e.target.value)}
+                                  placeholder="ชื่อผู้เล่น"
+                                  className="w-full p-2 sm:p-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" 
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase mb-0.5 sm:mb-1 ml-1">เวลาเข้า</label>
+                                <input 
+                                  type="time" 
+                                  value={player.joinTime} 
+                                  onChange={(e) => updateCalcPlayerTime(index, 'joinTime', e.target.value)}
+                                  className="w-full p-1.5 sm:p-2 bg-white border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm font-mono focus:border-indigo-500 outline-none" 
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase mb-0.5 sm:mb-1 ml-1">เวลาออก</label>
+                                <input 
+                                  type="time" 
+                                  value={player.leaveTime} 
+                                  onChange={(e) => updateCalcPlayerTime(index, 'leaveTime', e.target.value)}
+                                  className="w-full p-1.5 sm:p-2 bg-white border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm font-mono focus:border-indigo-500 outline-none" 
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Right: Results (Responsive Flex List) */}
+                  <div className="lg:col-span-7">
+                    <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 shadow-sm h-full flex flex-col">
+                      <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50 rounded-t-2xl sm:rounded-t-3xl">
+                        <h3 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
+                          <ChevronRight className="text-indigo-500 w-4 h-4 sm:w-5 sm:h-5"/> สรุปยอดโอนรายบุคคล
+                        </h3>
+                      </div>
+                      
+                      {/* Responsive List Container */}
+                      <div className="flex-1 overflow-hidden">
+                        
+                        {/* Table Header */}
+                        <div className="hidden sm:flex items-center justify-between p-4 border-b border-slate-100 text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider bg-white">
+                           <div className="flex-[2]">ผู้เล่น</div>
+                           <div className="flex-[1.5] text-center">เวลาเล่นจริง</div>
+                           <div className="flex-[1.5] text-right">ยอดที่ต้องจ่าย</div>
+                        </div>
+
+                        {/* Data Rows */}
+                        <div className="flex flex-col divide-y divide-slate-50">
+                          {calcResults.length === 0 ? (
+                            <div className="p-8 sm:p-10 text-center text-slate-400 text-xs sm:text-sm">
+                              เพิ่มข้อมูลด้านซ้ายเพื่อดูผลลัพธ์
+                            </div>
+                          ) : calcResults.map((result, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 sm:p-4 hover:bg-slate-50/50 transition-colors gap-2">
+                              
+                              <div className="flex items-center gap-2.5 sm:gap-3 flex-[2] min-w-0">
+                                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-[10px] sm:text-xs font-bold uppercase border border-indigo-200 shrink-0">
+                                  {result.name.substring(0, 2)}
+                                </div>
+                                <span className="font-bold text-slate-700 text-sm sm:text-base truncate">{result.name}</span>
+                              </div>
+                              
+                              <div className="flex-[1.5] text-center shrink-0">
+                                <span className="bg-slate-100 text-slate-600 px-2 py-1 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border border-slate-200 whitespace-nowrap">
+                                  {result.minutesPlayed} นาที
+                                </span>
+                              </div>
+                              
+                              <div className="flex-[1.5] text-right shrink-0">
+                                <span className="font-black text-emerald-600 text-base sm:text-lg tracking-tight">
+                                  {result.feeToPay} <span className="text-[10px] sm:text-xs font-bold text-emerald-400">฿</span>
+                                </span>
+                              </div>
+                              
+                            </div>
+                          ))}
+                        </div>
+
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
               </div>
             </div>
-
           </div>
         )}
       </main>
+
+      {/* Custom Styles for Scrollbar */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+      `}} />
     </div>
   );
 }
