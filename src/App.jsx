@@ -3,7 +3,8 @@ import {
   Users, UserPlus, RefreshCw, Trophy, DollarSign, Swords, 
   Clock, Trash2, History, Settings, Play, StopCircle, 
   CheckCircle2, Circle, ChevronRight, Activity, Award,
-  Menu, X, Wifi, WifiOff, AlertCircle, RotateCcw, Copy
+  Menu, X, Wifi, WifiOff, AlertCircle, RotateCcw, Copy, ArrowLeftRight,
+  TrendingUp, Hash, Sparkles
 } from 'lucide-react';
 
 // ==========================================
@@ -21,27 +22,29 @@ export default function App() {
   // ==========================================
   const [toast, setToast] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const [swapData, setSwapData] = useState(null);
+  const [scoreModal, setScoreModal] = useState(null); 
+  const [scoreInput, setScoreInput] = useState({ t1: '', t2: '' });
 
   const showToast = (message, type = 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  const requestConfirm = (message, onConfirm) => {
-    setConfirmDialog({ message, onConfirm });
-  };
+  const requestConfirm = (message, onConfirm) => setConfirmDialog({ message, onConfirm });
 
   // ==========================================
   // 2. DATA STATES
   // ==========================================
   const [players, setPlayers] = useState(() => {
-    const localData = localStorage.getItem('badminton_players_v9');
+    const localData = localStorage.getItem('badminton_players_v13');
     return localData ? JSON.parse(localData) : [
       { id: '1', name: 'A', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
       { id: '2', name: 'B', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
       { id: '3', name: 'C', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
       { id: '4', name: 'D', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
       { id: '5', name: 'E', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
+      { id: '6', name: 'F', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
     ];
   });
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -49,21 +52,21 @@ export default function App() {
   const [matchMode, setMatchMode] = useState('winner_stays');
   
   const [matchSession, setMatchSession] = useState(() => {
-    const local = localStorage.getItem('badminton_session_v9');
+    const local = localStorage.getItem('badminton_session_v13');
     return local ? JSON.parse(local) : null;
   });
 
   const [matchHistory, setMatchHistory] = useState(() => {
-    const local = localStorage.getItem('badminton_history_v9');
+    const local = localStorage.getItem('badminton_history_v13');
     return local ? JSON.parse(local) : [];
   });
 
-  const [undoSnapshot, setUndoSnapshot] = useState(null); // เก็บ State สำหรับย้อนกลับผลแมตช์
+  const [undoSnapshot, setUndoSnapshot] = useState(null); 
 
   const [calcFees, setCalcFees] = useState({ court: 120, shuttlecock: 0 });
   const [calcPlayers, setCalcPlayers] = useState([]);
   const [calcResults, setCalcResults] = useState([]);
-  const [globalLeaveTime, setGlobalLeaveTime] = useState('21:00'); // เซ็ตเวลาออกแบบรวดเดียว
+  const [globalLeaveTime, setGlobalLeaveTime] = useState('21:00'); 
 
   // ==========================================
   // 3. API SYNC FUNCTIONS
@@ -77,12 +80,8 @@ export default function App() {
         if (data.history) setMatchHistory(data.history);
         if (data.session !== undefined) setMatchSession(data.session);
         setDbStatus('online');
-      } else {
-        setDbStatus('offline');
-      }
-    } catch (error) {
-      setDbStatus('offline');
-    }
+      } else { setDbStatus('offline'); }
+    } catch (error) { setDbStatus('offline'); }
   }, []);
 
   useEffect(() => {
@@ -96,9 +95,9 @@ export default function App() {
     if (newHistory) setMatchHistory(newHistory);
     if (newSession !== undefined) setMatchSession(newSession);
 
-    if (newPlayers) localStorage.setItem('badminton_players_v9', JSON.stringify(newPlayers));
-    if (newHistory) localStorage.setItem('badminton_history_v9', JSON.stringify(newHistory));
-    if (newSession !== undefined) localStorage.setItem('badminton_session_v9', JSON.stringify(newSession));
+    if (newPlayers) localStorage.setItem('badminton_players_v13', JSON.stringify(newPlayers));
+    if (newHistory) localStorage.setItem('badminton_history_v13', JSON.stringify(newHistory));
+    if (newSession !== undefined) localStorage.setItem('badminton_session_v13', JSON.stringify(newSession));
 
     if (dbStatus === 'online') {
       try {
@@ -117,25 +116,37 @@ export default function App() {
 
   const getPlayerLatest = (id) => players.find(p => p.id === String(id)) || { mmr: 0, name: 'Unknown', playCount: 0 };
 
+  const getBestPartner = (playerName) => {
+    const partnerCounts = {};
+    matchHistory.forEach(match => {
+      const isInWinningTeam = match.team1 && match.team1.some(p => p.name === playerName);
+      if (isInWinningTeam && match.team1.length === 2) {
+        const partner = match.team1.find(p => p.name !== playerName);
+        if (partner) partnerCounts[partner.name] = (partnerCounts[partner.name] || 0) + 1;
+      }
+    });
+
+    if (Object.keys(partnerCounts).length === 0) return "-";
+    let bestPartner = "-"; let maxWins = 0;
+    for (const [partner, wins] of Object.entries(partnerCounts)) {
+      if (wins > maxWins) { maxWins = wins; bestPartner = partner; }
+    }
+    return `${bestPartner} (${maxWins}W)`;
+  };
+
   // ==========================================
-  // 4. LOCK LOGIC (กันลบคนกำลังตี)
+  // 4. LOCK LOGIC & MATCHMAKING
   // ==========================================
   const isPlayerInMatch = (id) => {
     if (!matchSession) return false;
     const strId = String(id);
-    const inCourts = matchSession.courts.some(c =>
-      !c.finished && (c.team1.some(p => String(p.id) === strId) || c.team2.some(p => String(p.id) === strId))
-    );
+    const inCourts = matchSession.courts.some(c => !c.finished && (c.team1.some(p => String(p.id) === strId) || c.team2.some(p => String(p.id) === strId)));
     const inQueue = matchSession.waitingQueue?.some(p => String(p.id) === strId);
     return inCourts || inQueue;
   };
 
-  // ==========================================
-  // 5. Matchmaking Logic
-  // ==========================================
   const handleStartSession = () => {
     const activePlayers = players.filter(p => p.isActive);
-
     if (activePlayers.length < 4) return showToast('ต้องมีผู้เล่นที่ "พร้อมลงสนาม" อย่างน้อย 4 คนขึ้นไปครับ', 'error');
     
     const sortedActive = [...activePlayers].sort((a, b) => {
@@ -145,11 +156,7 @@ export default function App() {
       return Math.random() - 0.5;
     });
 
-    const numToPlay = Math.min(
-      sortedActive.length - (sortedActive.length % 4),
-      numCourts * 4
-    );
-
+    const numToPlay = Math.min(sortedActive.length - (sortedActive.length % 4), numCourts * 4);
     if (numToPlay === 0) return showToast('จำนวนผู้เล่นไม่พอที่จะจับคู่ลงสนามได้อย่างน้อย 1 สนาม', 'error');
 
     const selectedToPlay = sortedActive.slice(0, numToPlay);
@@ -159,50 +166,66 @@ export default function App() {
 
     const pairs = [];
     const half = selectedToPlay.length / 2;
-    for (let i = 0; i < half; i++) {
-      pairs.push([selectedToPlay[i], selectedToPlay[selectedToPlay.length - 1 - i]]);
-    }
+    for (let i = 0; i < half; i++) pairs.push([selectedToPlay[i], selectedToPlay[selectedToPlay.length - 1 - i]]);
     
     const courts = [];
     const actualCourts = pairs.length / 2;
     for (let i = 0; i < actualCourts; i++) {
-      courts.push({
-        id: i + 1,
-        team1: pairs[i],
-        team2: pairs[pairs.length - 1 - i],
-        finished: false,
-        winnerIndex: null
-      });
+      courts.push({ id: i + 1, team1: pairs[i], team2: pairs[pairs.length - 1 - i], finished: false, winnerIndex: null });
     }
 
-    const newSession = {
-      mode: matchMode,
-      courts: courts,
-      waitingQueue: waitingPlayersQueue,
-      round: 1
-    };
-
-    setUndoSnapshot(null); // ล้างประวัติย้อนกลับเมื่อจัดทีมใหม่
-    updateGlobalState(null, null, newSession);
+    setUndoSnapshot(null); 
+    updateGlobalState(null, null, { mode: matchMode, courts: courts, waitingQueue: waitingPlayersQueue, round: 1 });
     showToast('จัดทีมเริ่มเซสชันสำเร็จ!', 'success');
   };
 
-  const recordResult = (courtId, winnerTeamIndex) => {
-    if (!matchSession) return;
+  const executeSwapPlayer = (newPlayer) => {
+    if (!matchSession || !swapData) return;
+    setUndoSnapshot({ players: JSON.parse(JSON.stringify(players)), history: JSON.parse(JSON.stringify(matchHistory)), session: JSON.parse(JSON.stringify(matchSession)) });
 
+    const nextSession = { ...matchSession, waitingQueue: [...(matchSession.waitingQueue || [])] };
+    const cIdx = nextSession.courts.findIndex(c => c.id === swapData.courtId);
+    if (cIdx === -1) return;
+
+    const teamKey = swapData.teamIndex === 1 ? 'team1' : 'team2';
+    nextSession.courts[cIdx][teamKey] = nextSession.courts[cIdx][teamKey].map(p => p.id === swapData.oldPlayer.id ? newPlayer : p);
+
+    nextSession.waitingQueue = nextSession.waitingQueue.filter(p => p.id !== newPlayer.id);
+    nextSession.waitingQueue.push(swapData.oldPlayer);
+
+    updateGlobalState(null, null, nextSession);
+    setSwapData(null);
+    showToast(`เปลี่ยนตัว ${newPlayer.name} ลงแทน ${swapData.oldPlayer.name} เรียบร้อย`, 'success');
+  };
+
+  const handleScoreSubmit = () => {
+    const s1 = parseInt(scoreInput.t1);
+    const s2 = parseInt(scoreInput.t2);
+    
+    if (isNaN(s1) || isNaN(s2)) return showToast('กรุณากรอกคะแนนให้ครบทั้งสองทีม', 'error');
+    if (s1 < 0 || s2 < 0) return showToast('คะแนนห้ามติดลบ', 'error');
+    if (s1 === s2) return showToast('แบดมินตันไม่มีเสมอ กรุณาระบุผู้ชนะ', 'error');
+
+    const winnerIndex = s1 > s2 ? 1 : 2;
+    recordResult(scoreModal.id, winnerIndex, s1, s2);
+    setScoreModal(null);
+  };
+
+  const recordResult = (courtId, winnerTeamIndex, score1, score2) => {
+    if (!matchSession) return;
     const targetCourt = matchSession.courts.find(c => c.id === courtId);
     if (!targetCourt) return;
 
-    // 🌟 ถ่าย Snapshot โค้ดสำหรับทำ Undo (ก่อนแก้ไขค่าทั้งหมด)
-    const prevState = {
-      players: JSON.parse(JSON.stringify(players)),
-      history: JSON.parse(JSON.stringify(matchHistory)),
-      session: JSON.parse(JSON.stringify(matchSession))
-    };
-    setUndoSnapshot(prevState);
+    setUndoSnapshot({ players: JSON.parse(JSON.stringify(players)), history: JSON.parse(JSON.stringify(matchHistory)), session: JSON.parse(JSON.stringify(matchSession)) });
 
     const winningTeam = winnerTeamIndex === 1 ? targetCourt.team1 : targetCourt.team2;
     const losingTeam = winnerTeamIndex === 1 ? targetCourt.team2 : targetCourt.team1;
+    
+    const winnerScore = winnerTeamIndex === 1 ? score1 : score2;
+    const loserScore = winnerTeamIndex === 1 ? score2 : score1;
+    const scoreDiff = Math.abs(winnerScore - loserScore);
+
+    const scoreBonus = Math.max(0, Math.round((scoreDiff - 2) / 3)); 
 
     const getAvgMmr = (team) => team.reduce((sum, p) => sum + getPlayerLatest(p.id).mmr, 0) / team.length;
     const winAvg = getAvgMmr(winningTeam);
@@ -212,61 +235,53 @@ export default function App() {
 
     winningTeam.forEach(p => {
        const partner = winningTeam.find(x => x.id !== p.id);
+       const myMmr = getPlayerLatest(p.id).mmr;
+       const partnerMmr = partner ? getPlayerLatest(partner.id).mmr : myMmr;
        let gain = 15;
-       const pMmr = getPlayerLatest(p.id).mmr;
-       const partnerMmr = getPlayerLatest(partner.id).mmr;
 
-       if (loseAvg > winAvg + 10) gain += 3; 
-       else if (winAvg > loseAvg + 10) gain -= 3;
-       if (pMmr < partnerMmr - 10) gain += 2;
-       else if (pMmr > partnerMmr + 10) gain -= 2;
+       const diffWithPartner = partnerMmr - myMmr;
+       gain += Math.round(diffWithPartner / 10); 
+       const teamDiff = loseAvg - winAvg;
+       gain += Math.round(teamDiff / 10); 
+       gain += scoreBonus; 
 
-       mmrChanges[p.id] = gain;
+       mmrChanges[p.id] = Math.max(5, Math.min(30, gain));
     });
 
     losingTeam.forEach(p => {
        const partner = losingTeam.find(x => x.id !== p.id);
-       let drop = 10;
-       const pMmr = getPlayerLatest(p.id).mmr;
-       const partnerMmr = getPlayerLatest(partner.id).mmr;
+       const myMmr = getPlayerLatest(p.id).mmr;
+       const partnerMmr = partner ? getPlayerLatest(partner.id).mmr : myMmr;
+       let drop = 10; 
 
-       if (loseAvg > winAvg + 10) drop += 3;
-       else if (winAvg > loseAvg + 10) drop -= 3;
-       if (pMmr > partnerMmr + 10) drop -= 2;
-       else if (pMmr < partnerMmr - 10) drop += 2;
+       const diffWithPartnerLose = partnerMmr - myMmr;
+       drop += Math.round(diffWithPartnerLose / 10); 
+       const teamDiffLose = winAvg - loseAvg;
+       drop -= Math.round(teamDiffLose / 10); 
+       drop += scoreBonus; 
 
-       mmrChanges[p.id] = -drop;
+       mmrChanges[p.id] = -Math.max(5, Math.min(30, drop)); 
     });
 
     const updatedPlayers = players.map(p => {
       const pId = String(p.id);
       const isWinner = winningTeam.some(w => String(w.id) === pId);
       const isLoser = losingTeam.some(l => String(l.id) === pId);
-      
       if (isWinner || isLoser) {
-         const change = mmrChanges[p.id];
-         return {
-           ...p,
-           win: isWinner ? p.win + 1 : p.win,
-           lose: isLoser ? p.lose + 1 : p.lose,
-           mmr: Math.max(10, p.mmr + change),
-           playCount: (p.playCount || 0) + 1
-         };
+         return { ...p, win: isWinner ? p.win + 1 : p.win, lose: isLoser ? p.lose + 1 : p.lose, mmr: Math.max(10, p.mmr + mmrChanges[p.id]), playCount: (p.playCount || 0) + 1 };
       }
       return p;
     });
     
     const historyId = `M${Date.now().toString().slice(-4)}-C${courtId}`;
     const newRecord = {
-      id: historyId,
-      timestamp: Date.now(),
+      id: historyId, timestamp: Date.now(),
       date: new Date().toLocaleString('th-TH', { hour12: false, month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' }),
+      scoreText: `${winnerScore} - ${loserScore}`, 
       team1: winningTeam.map(p => ({ name: p.name, mmr: getPlayerLatest(p.id).mmr, change: `+${mmrChanges[p.id]}` })),
       team2: losingTeam.map(p => ({ name: p.name, mmr: getPlayerLatest(p.id).mmr, change: `${mmrChanges[p.id]}` })),
-      winnerLabel: winnerTeamIndex === 1 ? 'TEAM A' : 'TEAM B',
-      matchDetails: `สนามที่ ${courtId} • ${matchSession.mode === 'winner_stays' ? 'แชมป์อยู่ต่อ' : 'สลับคู่'}`
+      winnerLabel: winnerTeamIndex === 1 ? 'TEAM A' : 'TEAM B', matchDetails: `สนามที่ ${courtId} • ${matchSession.mode === 'winner_stays' ? 'แชมป์อยู่ต่อ' : 'สลับคู่'}`
     };
-    const newHistory = [newRecord, ...matchHistory];
 
     const nextState = { ...matchSession, waitingQueue: [...(matchSession.waitingQueue || [])] };
     const cIdx = nextState.courts.findIndex(c => c.id === courtId);
@@ -275,216 +290,187 @@ export default function App() {
       let nextChallengerTeam = null;
       let currentQueue = nextState.waitingQueue;
 
-      currentQueue.sort((a, b) => {
-        const countA = getPlayerLatest(a.id).playCount || 0;
-        const countB = getPlayerLatest(b.id).playCount || 0;
-        return countA - countB;
-      });
+      currentQueue.sort((a, b) => (getPlayerLatest(a.id).playCount || 0) - (getPlayerLatest(b.id).playCount || 0));
 
       if (currentQueue.length >= 2) {
         nextChallengerTeam = [currentQueue.shift(), currentQueue.shift()];
         currentQueue.push(...losingTeam);
-      } 
-      else if (currentQueue.length === 1) {
+      } else if (currentQueue.length === 1) {
         const leftoverPlayer = currentQueue.shift();
         const sortedLosers = [...losingTeam].sort((a, b) => {
-          const countA = getPlayerLatest(a.id).playCount || 0;
-          const countB = getPlayerLatest(b.id).playCount || 0;
-          if (countA !== countB) return countB - countA;
+          const countDiff = (getPlayerLatest(b.id).playCount || 0) - (getPlayerLatest(a.id).playCount || 0);
+          if (countDiff !== 0) return countDiff;
           return getPlayerLatest(b.id).mmr - getPlayerLatest(a.id).mmr;
         });
-        
         nextChallengerTeam = [leftoverPlayer, sortedLosers[1]];
         currentQueue.push(sortedLosers[0]);
-      } 
-      else {
+      } else {
         nextChallengerTeam = losingTeam;
       }
 
-      nextState.courts[cIdx] = {
-        ...nextState.courts[cIdx],
-        team1: winningTeam,
-        team2: nextChallengerTeam,
-        finished: false,
-        winnerIndex: null
-      };
+      nextState.courts[cIdx] = { ...nextState.courts[cIdx], team1: winningTeam, team2: nextChallengerTeam, finished: false, winnerIndex: null };
     } else {
       nextState.courts[cIdx].finished = true;
       nextState.courts[cIdx].winnerIndex = winnerTeamIndex;
     }
 
-    updateGlobalState(updatedPlayers, newHistory, nextState);
-    showToast(`บันทึกผลสนาม ${courtId} แล้ว`, 'success');
+    updateGlobalState(updatedPlayers, [newRecord, ...matchHistory], nextState);
+    showToast(`บันทึกผลสนาม ${courtId} แล้ว (${winnerScore}-${loserScore})`, 'success');
   };
 
   const undoLastMatch = () => {
     if (!undoSnapshot) return;
-    requestConfirm('คุณต้องการย้อนกลับผลการแข่งขันและการจัดคิวล่าสุดใช่หรือไม่? (MMR จะถูกดึงกลับ)', () => {
+    requestConfirm('คุณต้องการย้อนกลับผลการแข่งขันและการจัดคิวล่าสุดใช่หรือไม่?', () => {
       updateGlobalState(undoSnapshot.players, undoSnapshot.history, undoSnapshot.session);
       setUndoSnapshot(null);
       showToast('ย้อนกลับผลแมตช์ล่าสุดเรียบร้อย', 'success');
     });
   };
 
-  const endSession = () => {
-    requestConfirm('ยืนยันการปิดเซสชันการแข่งปัจจุบัน?', () => {
-      updateGlobalState(null, null, null);
-      setUndoSnapshot(null);
-      showToast('ยุติการแข่งขันแล้ว', 'success');
-    });
-  }
-
+  const endSession = () => requestConfirm('ยืนยันการปิดเซสชันการแข่งปัจจุบัน?', () => { updateGlobalState(null, null, null); setUndoSnapshot(null); showToast('ยุติการแข่งขันแล้ว', 'success'); });
   const isAllCourtsFinished = matchSession && matchSession.mode === 'balanced' && matchSession.courts.every(c => c.finished);
 
   // ==========================================
-  // 6. Player Management
+  // 5. Player Management & Re-Rank
   // ==========================================
   const addPlayer = () => {
     if (!newPlayerName) return;
-    if (players.some(p => p.name.trim().toLowerCase() === newPlayerName.trim().toLowerCase())) {
-      return showToast('ชื่อนี้มีอยู่ในระบบแล้วครับ', 'error');
-    }
-    const newId = Date.now().toString();
-    const newP = { id: newId, name: newPlayerName.trim(), mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 };
-    updateGlobalState([...players, newP], null, undefined);
+    if (players.some(p => p.name.trim().toLowerCase() === newPlayerName.trim().toLowerCase())) return showToast('ชื่อนี้มีอยู่ในระบบแล้วครับ', 'error');
+    updateGlobalState([...players, { id: Date.now().toString(), name: newPlayerName.trim(), mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 }], null, undefined);
     setNewPlayerName('');
-    showToast(`เพิ่มผู้เล่น ${newP.name} เรียบร้อย`, 'success');
+    showToast(`เพิ่มผู้เล่นเรียบร้อย`, 'success');
   };
 
   const togglePlayerActive = (id) => {
     if (isPlayerInMatch(id)) return showToast('ไม่สามารถเปลี่ยนสถานะได้ ผู้เล่นกำลังแข่งขันหรือรอคิวอยู่', 'error');
-    const updatedPlayers = players.map(p => p.id === String(id) ? { ...p, isActive: !p.isActive } : p);
-    updateGlobalState(updatedPlayers, null, undefined);
+    updateGlobalState(players.map(p => p.id === String(id) ? { ...p, isActive: !p.isActive } : p), null, undefined);
   };
 
   const removePlayer = (id) => {
     if (isPlayerInMatch(id)) return showToast('ไม่สามารถลบได้ ผู้เล่นกำลังแข่งขันหรือรอคิวอยู่', 'error');
     requestConfirm('ลบผู้เล่นคนนี้ออกจากระบบถาวรใช่หรือไม่?', () => {
-      const updatedPlayers = players.filter(p => p.id !== String(id));
-      updateGlobalState(updatedPlayers, null, undefined);
+      updateGlobalState(players.filter(p => p.id !== String(id)), null, undefined);
       showToast('ลบผู้เล่นออกจากระบบแล้ว', 'success');
     });
   };
 
-  const clearHistory = () => {
-    requestConfirm('⚠️ ลบประวัติทั้งหมดถาวร ใช่หรือไม่?', () => {
-      updateGlobalState(null, [], undefined);
-      showToast('ล้างประวัติการแข่งเรียบร้อย', 'success');
-    });
-  };
-
-  const resetRoster = () => {
-    requestConfirm('⚠️ รีเซ็ตข้อมูลผู้เล่นเป็นค่าเริ่มต้นทั้งหมด ใช่หรือไม่?', () => {
-      const defaults = [
-        { id: '1', name: 'A', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
-        { id: '2', name: 'B', mmr: 100, win: 0, lose: 0, isActive: true, playCount: 0 },
-      ];
-      updateGlobalState(defaults, [], null);
-      showToast('รีเซ็ตข้อมูลผู้เล่นเรียบร้อย', 'success');
+  const clearHistory = () => requestConfirm('⚠️ ลบประวัติทั้งหมดถาวร ใช่หรือไม่?', () => { updateGlobalState(null, [], undefined); showToast('ล้างประวัติการแข่งเรียบร้อย', 'success'); });
+  
+  // 🌟 ฟังก์ชันระบบรีแรงค์ (Soft Reset)
+  const handleNewSeason = () => {
+    requestConfirm('⚠️ ยืนยันการขึ้นซีซันใหม่ (Re-Rank)?\n\n1. สถิติ ชนะ/แพ้ จะถูกล้างเป็น 0\n2. ประวัติการแข่งจะถูกล้างทั้งหมด\n3. MMR จะถูก "Soft Reset" (ดึงคะแนนเข้าหา 100 เพื่อบีบช่องว่างความห่างให้สูสีขึ้น)\n\nยืนยันการเริ่มฤดูกาลใหม่?', () => {
+      const updatedPlayers = players.map(p => ({
+        ...p,
+        mmr: Math.round((p.mmr + 100) / 2), // สมการ Soft Reset
+        win: 0,
+        lose: 0,
+        playCount: 0
+      }));
+      updateGlobalState(updatedPlayers, [], null);
+      setUndoSnapshot(null);
+      showToast('🎉 เริ่มซีซันใหม่เรียบร้อย! ขอให้สนุกกับการไต่แรงค์', 'success');
     });
   };
 
   // ==========================================
-  // 7. Calculator Logic
+  // 6. Calculator Logic
   // ==========================================
   const calculateDynamicFees = () => {
     const totalExpenses = Number(calcFees.court) + Number(calcFees.shuttlecock);
     let totalPlayedMinutes = 0;
+    const getMins = (t) => { if(!t) return 0; const [h, m] = t.split(':').map(Number); return (h * 60) + m; };
 
-    const getMinutesFromTime = (timeStr) => {
-      if (!timeStr) return 0;
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      return (hours * 60) + minutes;
-    };
-
-    const playersWithMinutes = calcPlayers.map(player => {
-      const joinMins = getMinutesFromTime(player.joinTime);
-      const leaveMins = getMinutesFromTime(player.leaveTime);
-      const adjustedLeave = leaveMins < joinMins ? leaveMins + (24 * 60) : leaveMins;
-      const minutesPlayed = Math.max(0, adjustedLeave - joinMins);
-      totalPlayedMinutes += minutesPlayed;
-      return { ...player, minutesPlayed };
+    const pm = calcPlayers.map(p => {
+      const jMins = getMins(p.joinTime); const lMins = getMins(p.leaveTime);
+      const mins = Math.max(0, (lMins < jMins ? lMins + (24 * 60) : lMins) - jMins);
+      totalPlayedMinutes += mins; return { ...p, minutesPlayed: mins };
     });
 
     if (totalPlayedMinutes === 0) return setCalcResults([]);
-
-    const results = playersWithMinutes.map(player => {
-      const ratio = player.minutesPlayed / totalPlayedMinutes;
-      return { ...player, feeToPay: (totalExpenses * ratio).toFixed(2) };
-    });
-    setCalcResults(results);
+    setCalcResults(pm.map(p => ({ ...p, feeToPay: (totalExpenses * (p.minutesPlayed / totalPlayedMinutes)).toFixed(2) })));
   };
 
-  useEffect(() => {
-    if (activeTab === 'calculator') calculateDynamicFees();
-  }, [calcFees, calcPlayers, activeTab]);
+  useEffect(() => { if (activeTab === 'calculator') calculateDynamicFees(); }, [calcFees, calcPlayers, activeTab]);
 
-  const updateCalcPlayerTime = (index, field, value) => {
-    const newPlayers = [...calcPlayers];
-    newPlayers[index][field] = value;
-    setCalcPlayers(newPlayers);
-  };
+  const updateCalcPlayerTime = (index, field, value) => { const np = [...calcPlayers]; np[index][field] = value; setCalcPlayers(np); };
   const addCalcPlayer = () => setCalcPlayers([...calcPlayers, { id: Date.now(), name: `Player ${calcPlayers.length + 1}`, joinTime: '19:00', leaveTime: '21:00' }]);
   const removeCalcPlayer = (id) => setCalcPlayers(calcPlayers.filter(p => p.id !== id));
   
   const importRosterToCalculator = () => {
     const activePlayers = players.filter(p => p.isActive);
-    if (activePlayers.length === 0) return showToast('ไม่มีผู้เล่นที่ตั้งสถานะพร้อมลงสนามครับ', 'error');
+    if (activePlayers.length === 0) return showToast('ไม่มีผู้เล่นพร้อมลงสนามครับ', 'error');
     setCalcPlayers(activePlayers.map(p => ({ id: p.id, name: p.name, joinTime: '19:00', leaveTime: '21:00' })));
     showToast('ดึงรายชื่อสำเร็จ', 'success');
   };
-
   const applyGlobalLeaveTime = () => {
     if (!globalLeaveTime || calcPlayers.length === 0) return;
-    const updated = calcPlayers.map(p => ({ ...p, leaveTime: globalLeaveTime }));
-    setCalcPlayers(updated);
+    setCalcPlayers(calcPlayers.map(p => ({ ...p, leaveTime: globalLeaveTime })));
     showToast(`ตั้งเวลาออกทุกคนเป็น ${globalLeaveTime} แล้ว`, 'success');
   };
 
   // ==========================================
-  // 8. UI RENDER COMPONENT
+  // 7. UI RENDER COMPONENT
   // ==========================================
   const TabButton = ({ id, icon: Icon, label }) => (
-    <button 
-      onClick={() => setActiveTab(id)}
-      className={`flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm transition-all whitespace-nowrap
-        ${activeTab === id ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-indigo-600 hover:bg-slate-200/50'}`}
-    >
-      <Icon size={16} className={activeTab === id ? "text-indigo-600 sm:w-[18px] sm:h-[18px]" : "sm:w-[18px] sm:h-[18px]"} />
-      {label}
+    <button onClick={() => setActiveTab(id)} className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm transition-all whitespace-nowrap ${activeTab === id ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-indigo-600 hover:bg-slate-200/50'}`}>
+      <Icon size={16} className={activeTab === id ? "text-indigo-600" : ""} /> {label}
     </button>
   );
 
   const SidebarButton = ({ id, icon: Icon, label }) => (
-    <button 
-      onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }}
-      className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all w-full text-left
-        ${activeTab === id ? 'bg-indigo-50 text-indigo-700 border border-indigo-100/50' : 'text-slate-600 hover:text-indigo-600 hover:bg-slate-50 border border-transparent'}`}
-    >
-      <Icon size={20} className={activeTab === id ? "text-indigo-600" : "text-slate-400"} />
-      {label}
+    <button onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }} className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all w-full text-left ${activeTab === id ? 'bg-indigo-50 text-indigo-700 border border-indigo-100/50' : 'text-slate-600 hover:text-indigo-600 hover:bg-slate-50 border border-transparent'}`}>
+      <Icon size={20} className={activeTab === id ? "text-indigo-600" : "text-slate-400"} /> {label}
     </button>
   );
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans pb-20 selection:bg-indigo-100 selection:text-indigo-900 relative">
       
-      {/* 🌟 GLOBAL TOAST NOTIFICATION */}
       {toast && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300 font-bold text-sm ${toast.type === 'error' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}>
-          {toast.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
-          {toast.message}
+          {toast.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />} {toast.message}
         </div>
       )}
 
-      {/* 🌟 GLOBAL CONFIRM DIALOG */}
+      {/* 🌟 SCORE INPUT MODAL 🌟 */}
+      {scoreModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-200 border-2 border-indigo-100">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><Hash className="text-indigo-500" /> กรอกคะแนน สนาม {scoreModal.id}</h3>
+              <button onClick={() => setScoreModal(null)} className="p-1 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full transition-colors"><X size={18} /></button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 flex justify-between items-center">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-wider mb-1">TEAM A</span>
+                  {scoreModal.team1.map(p => <span key={p.id} className="font-bold text-slate-700 text-sm">{p.name}</span>)}
+                </div>
+                <input type="number" value={scoreInput.t1} onChange={(e) => setScoreInput({...scoreInput, t1: e.target.value})} placeholder="0" className="w-20 text-center text-2xl font-black bg-white border-2 border-indigo-200 text-indigo-700 p-2 rounded-xl outline-none focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" />
+              </div>
+              
+              <div className="bg-rose-50/50 p-4 rounded-2xl border border-rose-100 flex justify-between items-center">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider mb-1">TEAM B</span>
+                  {scoreModal.team2.map(p => <span key={p.id} className="font-bold text-slate-700 text-sm">{p.name}</span>)}
+                </div>
+                <input type="number" value={scoreInput.t2} onChange={(e) => setScoreInput({...scoreInput, t2: e.target.value})} placeholder="0" className="w-20 text-center text-2xl font-black bg-white border-2 border-rose-200 text-rose-700 p-2 rounded-xl outline-none focus:ring-4 focus:ring-rose-500/20 focus:border-rose-500 transition-all" />
+              </div>
+            </div>
+
+            <button onClick={handleScoreSubmit} className="w-full mt-6 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white py-3.5 rounded-xl font-black shadow-lg shadow-indigo-600/30 transition-all active:scale-95 flex justify-center items-center gap-2">
+              <CheckCircle2 size={18} /> บันทึกผลการแข่งขัน
+            </button>
+          </div>
+        </div>
+      )}
+
       {confirmDialog && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
-              <AlertCircle className="text-indigo-500" /> ยืนยันการดำเนินการ
-            </h3>
-            <p className="text-slate-600 text-sm mb-6 leading-relaxed">{confirmDialog.message}</p>
+            <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2"><AlertCircle className="text-indigo-500" /> ยืนยันการดำเนินการ</h3>
+            <p className="text-slate-600 text-sm mb-6 leading-relaxed whitespace-pre-wrap">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3">
               <button onClick={() => setConfirmDialog(null)} className="px-4 py-2 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors">ยกเลิก</button>
               <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }} className="px-4 py-2 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 transition-colors">ตกลง</button>
@@ -493,7 +479,29 @@ export default function App() {
         </div>
       )}
 
-      {/* SIDEBAR OVERLAY & MENU */}
+      {swapData && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><ArrowLeftRight className="text-indigo-500" /> เปลี่ยนตัวผู้เล่น</h3>
+              <button onClick={() => setSwapData(null)} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"><X size={18} /></button>
+            </div>
+            <p className="text-slate-500 text-sm mb-4">เลือกคนที่กำลัง <strong>เข้าคิวรอ</strong> เพื่อไปตีแทน <span className="font-bold text-indigo-600">{swapData.oldPlayer.name}</span></p>
+            <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2 mb-6">
+              {(!matchSession.waitingQueue || matchSession.waitingQueue.length === 0) ? (
+                <div className="text-center py-6 text-slate-400 text-sm bg-slate-50 rounded-2xl border border-dashed border-slate-200">ไม่มีผู้เล่นในคิวรอ</div>
+              ) : (
+                matchSession.waitingQueue.map((p, idx) => (
+                  <button key={p.id} onClick={() => executeSwapPlayer(p)} className="w-full text-left bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 p-3 rounded-xl transition-all flex justify-between items-center group">
+                    <span className="font-bold text-slate-700 group-hover:text-indigo-700">{p.name}</span><span className="text-xs font-bold text-indigo-500 bg-indigo-100 px-2 py-1 rounded-lg">เลือกลงแทน</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsSidebarOpen(false)}></div>
       <div className={`fixed top-0 left-0 h-full w-72 md:w-80 bg-white shadow-2xl z-[70] transform transition-transform duration-300 ease-in-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between">
@@ -501,10 +509,7 @@ export default function App() {
             <div className="bg-gradient-to-br from-indigo-600 to-violet-600 text-white p-2.5 rounded-xl shadow-md"><Swords size={22} /></div>
             <div>
               <h2 className="text-lg font-black text-slate-800 tracking-tight">Badminton Pro</h2>
-              <p className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${dbStatus === 'online' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {dbStatus === 'online' ? <Wifi size={12}/> : <WifiOff size={12}/>}
-                {dbStatus === 'online' ? 'Aiven Connected' : 'Offline Mode'}
-              </p>
+              <p className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${dbStatus === 'online' ? 'text-emerald-500' : 'text-rose-500'}`}>{dbStatus === 'online' ? <Wifi size={12}/> : <WifiOff size={12}/>}{dbStatus === 'online' ? 'Aiven Connected' : 'Offline Mode'}</p>
             </div>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors active:scale-95 bg-slate-50"><X size={20} /></button>
@@ -512,16 +517,16 @@ export default function App() {
 
         <div className="p-4 flex flex-col gap-2 flex-1 overflow-y-auto">
           <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest px-4 pt-2 pb-1">Menu</h3>
-          <SidebarButton id="matchmaking" icon={Activity} label="ระบบจัดทีม (Matchmaking)" />
-          <SidebarButton id="history" icon={History} label="ประวัติย้อนหลัง (History)" />
-          <SidebarButton id="calculator" icon={DollarSign} label="บิลค่าสนาม (Calculator)" />
+          <SidebarButton id="matchmaking" icon={Activity} label="จัดทีม (Matchmaking)" />
+          <SidebarButton id="history" icon={History} label="ประวัติ (History)" />
+          <SidebarButton id="stats" icon={TrendingUp} label="สถิติผู้เล่น (Rank)" />
+          <SidebarButton id="calculator" icon={DollarSign} label="คิดเงิน (Calculator)" />
         </div>
         <div className="p-6 border-t border-slate-100 bg-slate-50/50 text-center">
-           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Version 9.0 Pro Features</p>
+           <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Version 1.0 </p>
         </div>
       </div>
 
-      {/* HEADER */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 lg:px-8">
           <div className="flex flex-row items-center justify-between py-3 sm:py-4">
@@ -541,10 +546,11 @@ export default function App() {
                 </div>
               </div>
             </div>
-            <div className="hidden md:flex gap-1.5 sm:gap-2 bg-slate-100 p-1 sm:p-1.5 rounded-2xl w-max">
-              <TabButton id="matchmaking" icon={Activity} label="ระบบจัดทีม" />
-              <TabButton id="history" icon={History} label="ประวัติย้อนหลัง" />
-              <TabButton id="calculator" icon={DollarSign} label="บิลค่าสนาม" />
+            <div className="hidden md:flex gap-1 sm:gap-2 bg-slate-100 p-1 sm:p-1.5 rounded-2xl w-max">
+              <TabButton id="matchmaking" icon={Activity} label="จัดทีม" />
+              <TabButton id="history" icon={History} label="ประวัติ" />
+              <TabButton id="stats" icon={TrendingUp} label="สถิติ (Rank)" />
+              <TabButton id="calculator" icon={DollarSign} label="คิดเงิน" />
             </div>
           </div>
         </div>
@@ -558,36 +564,29 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto mt-4 sm:mt-6 px-4 lg:px-8">
         
-        {/* VIEW 1: MATCHMAKING & ROSTER */}
+        {/* VIEW 1: MATCHMAKING */}
         {activeTab === 'matchmaking' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="grid lg:grid-cols-12 gap-5 sm:gap-6 items-start">
               
-              {/* ROSTER PANEL */}
               <div className="lg:col-span-4 lg:sticky lg:top-28 space-y-5 sm:space-y-6">
                 <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-[0_2px_20px_-8px_rgba(0,0,0,0.05)] border border-slate-100">
                   <div className="flex items-center justify-between mb-4 sm:mb-5">
                     <h2 className="font-bold text-slate-800 text-base sm:text-lg flex items-center gap-2">
                       <Users className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500"/> รายชื่อผู้เล่น
                     </h2>
-                    <span className="bg-indigo-50 text-indigo-600 text-[10px] sm:text-xs font-bold px-2 sm:px-2.5 py-1 rounded-full border border-indigo-100">
-                      {players.filter(p=>p.isActive).length} พร้อมเล่น
-                    </span>
+                    <span className="bg-indigo-50 text-indigo-600 text-[10px] sm:text-xs font-bold px-2 sm:px-2.5 py-1 rounded-full border border-indigo-100">{players.filter(p=>p.isActive).length} พร้อมเล่น</span>
                   </div>
                   
                   <div className="flex gap-2 mb-5 sm:mb-6">
-                    <input 
-                      value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
-                      placeholder="พิมพ์ชื่อ..." className="flex-1 bg-slate-50 border border-slate-200 p-2.5 sm:p-3 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium" 
-                    />
+                    <input value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addPlayer()} placeholder="พิมพ์ชื่อ..." className="flex-1 bg-slate-50 border border-slate-200 p-2.5 sm:p-3 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-medium" />
                     <button onClick={addPlayer} className="bg-indigo-600 hover:bg-indigo-700 text-white p-2.5 sm:p-3 rounded-2xl shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center"><UserPlus size={18} className="sm:w-5 sm:h-5"/></button>
                   </div>
 
                   <div className="space-y-2.5 sm:space-y-3 max-h-[50vh] sm:max-h-[55vh] overflow-y-auto pr-1 sm:pr-2 custom-scrollbar">
                     {players.length === 0 && (
                       <div className="text-center py-8 sm:py-10 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                        <Users className="w-8 h-8 sm:w-10 sm:h-10 text-slate-300 mx-auto mb-2"/>
-                        <p className="text-xs sm:text-sm text-slate-500 font-medium">เพิ่มผู้เล่นคนแรกเลย</p>
+                        <Users className="w-8 h-8 sm:w-10 sm:h-10 text-slate-300 mx-auto mb-2"/><p className="text-xs sm:text-sm text-slate-500 font-medium">เพิ่มผู้เล่นคนแรกเลย</p>
                       </div>
                     )}
                     {players.sort((a,b) => b.mmr - a.mmr).map((p) => (
@@ -602,22 +601,15 @@ export default function App() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 sm:gap-3">
-                          <div className="flex flex-col items-end">
-                            <span className="text-[10px] sm:text-xs font-bold bg-slate-100 text-indigo-700 px-1.5 sm:px-2 py-0.5 rounded-md sm:rounded-lg border border-slate-200/60">{p.mmr}</span>
-                          </div>
+                          <div className="flex flex-col items-end"><span className="text-[10px] sm:text-xs font-bold bg-slate-100 text-indigo-700 px-1.5 sm:px-2 py-0.5 rounded-md sm:rounded-lg border border-slate-200/60">{p.mmr}</span></div>
                           <button onClick={() => removePlayer(p.id)} className="text-slate-300 hover:text-red-500 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity bg-white p-1 rounded-md"><Trash2 size={14} className="sm:w-4 sm:h-4" /></button>
                         </div>
                       </div>
                     ))}
                   </div>
-
-                  <div className="pt-4 mt-2 border-t border-slate-100 text-center">
-                    <button onClick={resetRoster} className="text-[10px] sm:text-[11px] text-slate-400 hover:text-red-500 font-medium underline underline-offset-2 transition-colors">ล้างข้อมูลผู้เล่นทั้งหมด</button>
-                  </div>
                 </div>
               </div>
 
-              {/* ARENA & SETTINGS */}
               <div className="lg:col-span-8 space-y-5 sm:space-y-6">
                 <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-[0_2px_20px_-8px_rgba(0,0,0,0.05)] border border-slate-100">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -662,14 +654,11 @@ export default function App() {
                             <span className="relative flex h-2.5 w-2.5 sm:h-3 sm:w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2.5 w-2.5 sm:h-3 sm:w-3 bg-red-500"></span></span>
                             LIVE ARENA
                           </h3>
-                          {/* 🌟 ปุ่มย้อนกลับแมตช์ (UNDO) */}
                           {undoSnapshot && (
-                            <button onClick={undoLastMatch} className="bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/30 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all w-max">
-                              <RotateCcw size={14} /> ย้อนผลที่บันทึกล่าสุด
-                            </button>
+                            <button onClick={undoLastMatch} className="bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/30 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all w-max"><RotateCcw size={14} /> ย้อนผลล่าสุด</button>
                           )}
                         </div>
-                        <p className="text-indigo-200/60 text-xs sm:text-sm mt-2 sm:mt-1 font-medium">{matchSession.mode === 'winner_stays' ? 'โหมด: แชมป์อยู่ต่อ' : 'โหมด: สลับใหม่ทุกรอบ (กระจายให้เล่นเท่ากัน)'}</p>
+                        <p className="text-indigo-200/60 text-xs sm:text-sm mt-2 sm:mt-1 font-medium">{matchSession.mode === 'winner_stays' ? 'โหมด: แชมป์อยู่ต่อ' : 'โหมด: สลับใหม่ทุกรอบ'}</p>
                       </div>
                       <span className="bg-white/5 backdrop-blur-md text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold border border-white/10 flex items-center gap-1.5 sm:gap-2 w-max"><Swords size={14} className="text-indigo-400 sm:w-4 sm:h-4"/> {matchSession.courts.length} สนามทำงาน</span>
                     </div>
@@ -682,43 +671,48 @@ export default function App() {
                             {court.finished && <span className="text-[9px] sm:text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg uppercase flex items-center gap-1"><CheckCircle2 size={10} className="sm:w-3 sm:h-3"/> Match Ended</span>}
                           </div>
 
-                          <div className="flex-1 flex flex-col space-y-3 sm:space-y-4">
-                            {/* Team 1 (Top) */}
-                            <div className={`relative p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all duration-300 ${court.finished ? 'bg-white/5 border-white/5 opacity-50 grayscale' : 'bg-gradient-to-br from-indigo-500/10 to-transparent border-indigo-500/20 hover:border-indigo-500/40'}`}>
-                              <div className="flex flex-col gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+                          <div className="flex-1 flex flex-col space-y-2">
+                            <div className={`relative p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all duration-300 ${court.finished ? 'bg-white/5 border-white/5 opacity-50 grayscale' : 'bg-gradient-to-br from-indigo-500/10 to-transparent border-indigo-500/20'}`}>
+                              <div className="flex flex-col gap-1.5 sm:gap-2">
                                 {court.team1.map(p => (
-                                  <div key={p.id} className="flex justify-between items-center">
+                                  <div key={p.id} className="flex justify-between items-center group/player">
                                     <span className="font-bold text-white text-xs sm:text-sm">{p.name}</span>
-                                    <span className="text-[9px] sm:text-[10px] font-mono bg-white/10 text-indigo-200 px-1.5 sm:px-2 py-0.5 rounded-md">{getPlayerLatest(p.id).mmr}</span>
+                                    <div className="flex items-center gap-2">
+                                      {!court.finished && <button onClick={() => setSwapData({ courtId: court.id, teamIndex: 1, oldPlayer: p })} className="opacity-0 group-hover/player:opacity-100 transition-opacity bg-indigo-500/30 hover:bg-indigo-500 text-indigo-200 hover:text-white p-1 rounded-md"><RefreshCw size={12} /></button>}
+                                      <span className="text-[9px] sm:text-[10px] font-mono bg-white/10 text-indigo-200 px-1.5 sm:px-2 py-0.5 rounded-md">{getPlayerLatest(p.id).mmr}</span>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
-                              {!court.finished && <button onClick={() => recordResult(court.id, 1)} className="w-full bg-indigo-500 hover:bg-indigo-400 text-white py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-[11px] sm:text-xs shadow-lg shadow-indigo-500/20 transition-all active:scale-95 flex justify-center items-center gap-1.5 sm:gap-2"><Award size={12} className="sm:w-3.5 sm:h-3.5" /> ทีมบนชนะ</button>}
                             </div>
 
-                            <div className="relative flex items-center justify-center h-2">
-                               <div className="absolute w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-                               <span className="bg-[#0B1120] text-slate-500 text-[9px] sm:text-[10px] font-black italic px-2 z-10 border border-white/5 rounded-full py-0.5">VS</span>
-                            </div>
+                            <div className="relative flex items-center justify-center h-4"><div className="absolute w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent"></div><span className="bg-[#0B1120] text-slate-500 text-[9px] sm:text-[10px] font-black italic px-2 z-10 border border-white/5 rounded-full py-0.5">VS</span></div>
 
-                            {/* Team 2 (Bottom) */}
-                            <div className={`relative p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all duration-300 ${court.finished ? 'bg-white/5 border-white/5 opacity-50 grayscale' : 'bg-gradient-to-br from-rose-500/10 to-transparent border-rose-500/20 hover:border-rose-500/40'}`}>
-                              <div className="flex flex-col gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+                            <div className={`relative p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all duration-300 ${court.finished ? 'bg-white/5 border-white/5 opacity-50 grayscale' : 'bg-gradient-to-br from-rose-500/10 to-transparent border-rose-500/20'}`}>
+                              <div className="flex flex-col gap-1.5 sm:gap-2">
                                 {court.team2.map(p => (
-                                  <div key={p.id} className="flex justify-between items-center">
+                                  <div key={p.id} className="flex justify-between items-center group/player">
                                     <span className="font-bold text-white text-xs sm:text-sm">{p.name}</span>
-                                    <span className="text-[9px] sm:text-[10px] font-mono bg-white/10 text-rose-200 px-1.5 sm:px-2 py-0.5 rounded-md">{getPlayerLatest(p.id).mmr}</span>
+                                    <div className="flex items-center gap-2">
+                                      {!court.finished && <button onClick={() => setSwapData({ courtId: court.id, teamIndex: 2, oldPlayer: p })} className="opacity-0 group-hover/player:opacity-100 transition-opacity bg-rose-500/30 hover:bg-rose-500 text-rose-200 hover:text-white p-1 rounded-md"><RefreshCw size={12} /></button>}
+                                      <span className="text-[9px] sm:text-[10px] font-mono bg-white/10 text-rose-200 px-1.5 sm:px-2 py-0.5 rounded-md">{getPlayerLatest(p.id).mmr}</span>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
-                              {!court.finished && <button onClick={() => recordResult(court.id, 2)} className="w-full bg-rose-500 hover:bg-rose-400 text-white py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold text-[11px] sm:text-xs shadow-lg shadow-rose-500/20 transition-all active:scale-95 flex justify-center items-center gap-1.5 sm:gap-2"><Award size={12} className="sm:w-3.5 sm:h-3.5" /> ทีมล่างชนะ</button>}
                             </div>
+
+                            {!court.finished && (
+                              <button onClick={() => { setScoreInput({t1: '', t2: ''}); setScoreModal(court); }} className="w-full mt-2 bg-white/10 hover:bg-white/20 text-white py-2.5 sm:py-3 rounded-lg sm:rounded-xl font-bold text-xs shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2 border border-white/10">
+                                <Award size={14} /> บันทึกผลคะแนน
+                              </button>
+                            )}
+
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    {/* Waiting Queue (Single-file array) */}
                     {matchSession.waitingQueue && matchSession.waitingQueue.length > 0 && (
                       <div className="mt-5 sm:mt-6 bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl p-4 sm:p-5 relative z-10">
                         <h4 className="font-bold text-[10px] sm:text-xs text-slate-400 uppercase tracking-widest flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
@@ -763,7 +757,7 @@ export default function App() {
                   <p className="text-sm sm:text-base font-medium">ยังไม่มีประวัติการแข่งขัน</p>
                 </div>
               ) : (
-                <div className="space-y-3 sm:space-y-4">
+                <div className="space-y-4">
                   {matchHistory.map((match) => (
                     <div key={match.id} className="group bg-white border border-slate-200 rounded-2xl p-4 md:p-5 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all flex flex-col md:flex-row gap-4 sm:gap-6">
                       <div className="md:w-1/4 flex flex-row md:flex-col justify-between md:justify-center border-b md:border-b-0 md:border-r border-slate-100 pb-3 md:pb-0 md:pr-4">
@@ -773,23 +767,31 @@ export default function App() {
                         </div>
                         <span className="text-[11px] sm:text-xs text-slate-400 text-right md:text-left self-end md:self-auto md:mt-1">{match.matchDetails}</span>
                       </div>
-                      <div className="flex-1 grid grid-cols-2 gap-3 sm:gap-4 items-center relative">
-                        <div className="bg-emerald-50/50 p-2.5 sm:p-3 rounded-xl border border-emerald-100 relative">
-                          <div className="absolute -top-2 -right-2 bg-emerald-500 text-white p-1 rounded-full shadow-sm"><Trophy size={10} className="sm:w-3 sm:h-3"/></div>
-                          <p className="text-[9px] sm:text-[10px] font-bold text-emerald-600 uppercase mb-1.5 sm:mb-2 tracking-wider">Winner</p>
+
+                      <div className="flex-1 flex flex-col sm:flex-row items-center gap-3 sm:gap-4 relative">
+                        <div className="flex-1 w-full bg-emerald-50/50 p-2.5 sm:p-3 rounded-xl border border-emerald-100 relative">
+                          <div className="absolute -top-2 -left-2 bg-emerald-500 text-white p-1 rounded-full shadow-sm"><Trophy size={10} className="sm:w-3 sm:h-3"/></div>
+                          <p className="text-[9px] sm:text-[10px] font-bold text-emerald-600 uppercase mb-1.5 sm:mb-2 tracking-wider text-right">Winner</p>
                           {match.team1.map((p, i) => (
                             <div key={i} className="flex justify-between items-center text-xs sm:text-sm mb-1.5 last:mb-0">
                               <span className="font-bold text-slate-700">{p.name}</span>
-                              <span className="text-[10px] font-black text-emerald-600 bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-200/50">{p.change || '+15'}</span>
+                              <span className="text-[10px] font-black text-emerald-600 bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-200/50">{p.change}</span>
                             </div>
                           ))}
                         </div>
-                        <div className="bg-slate-50 p-2.5 sm:p-3 rounded-xl border border-slate-100">
+
+                        {match.scoreText && (
+                          <div className="shrink-0 bg-slate-800 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl font-black text-sm sm:text-base tracking-widest shadow-md">
+                            {match.scoreText}
+                          </div>
+                        )}
+
+                        <div className="flex-1 w-full bg-slate-50 p-2.5 sm:p-3 rounded-xl border border-slate-100">
                           <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase mb-1.5 sm:mb-2 tracking-wider">Loser</p>
                           {match.team2.map((p, i) => (
                             <div key={i} className="flex justify-between items-center text-xs sm:text-sm mb-1.5 last:mb-0">
                               <span className="font-medium text-slate-600">{p.name}</span>
-                              <span className="text-[10px] font-black text-rose-500 bg-rose-100/80 px-1.5 py-0.5 rounded border border-rose-200/50">{p.change || '-10'}</span>
+                              <span className="text-[10px] font-black text-rose-500 bg-rose-100/80 px-1.5 py-0.5 rounded border border-rose-200/50">{p.change}</span>
                             </div>
                           ))}
                         </div>
@@ -802,7 +804,98 @@ export default function App() {
           </div>
         )}
 
-        {/* VIEW 3: CALCULATOR */}
+        {/* 🌟 VIEW 3: STATS & LEADERBOARD (Re-Rank added) */}
+        {activeTab === 'stats' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto">
+            <div className="bg-white p-5 sm:p-6 md:p-8 rounded-3xl shadow-[0_2px_20px_-8px_rgba(0,0,0,0.05)] border border-slate-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                    <TrendingUp className="text-indigo-500" /> Leaderboard & Stats
+                  </h2>
+                  <p className="text-slate-500 text-xs sm:text-sm mt-1">อันดับผู้เล่น อัตราชนะ และคู่หูยอดเยี่ยม</p>
+                </div>
+                {players.length > 0 && (
+                  <button onClick={handleNewSeason} className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold shadow-md shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-2 text-xs sm:text-sm whitespace-nowrap w-max">
+                    <Sparkles size={16} /> ขึ้นซีซันใหม่ (Re-Rank)
+                  </button>
+                )}
+              </div>
+
+              {(() => {
+                const rankedPlayers = [...players].sort((a, b) => b.mmr - a.mmr);
+                const top1 = rankedPlayers[0]; const top2 = rankedPlayers[1]; const top3 = rankedPlayers[2];
+
+                return (
+                  <>
+                    {rankedPlayers.some(p => p.win > 0 || p.lose > 0) && (
+                      <div className="flex justify-center items-end gap-2 sm:gap-6 mt-10 mb-12">
+                        {top2 && (
+                          <div className="flex flex-col items-center animate-in slide-in-from-bottom-8 duration-700 delay-100">
+                            <div className="bg-slate-100 rounded-full w-12 h-12 flex items-center justify-center font-bold text-slate-500 mb-2 border-2 border-slate-200 shadow-sm">{top2.name.substring(0,2)}</div>
+                            <div className="bg-gradient-to-t from-slate-200 to-slate-50 w-20 sm:w-24 h-24 rounded-t-2xl flex flex-col items-center justify-start pt-3 border border-slate-200 shadow-inner">
+                              <span className="text-2xl font-black text-slate-400">2</span><span className="text-[10px] sm:text-xs font-bold text-slate-500 mt-1">{top2.mmr} MMR</span>
+                            </div>
+                          </div>
+                        )}
+                        {top1 && (
+                          <div className="flex flex-col items-center z-10 animate-in slide-in-from-bottom-12 duration-700">
+                            <div className="absolute -mt-8 animate-bounce drop-shadow-md"><Trophy className="text-yellow-500 fill-yellow-100 w-8 h-8"/></div>
+                            <div className="bg-yellow-100 rounded-full w-16 h-16 flex items-center justify-center font-black text-yellow-700 mb-2 border-4 border-yellow-300 text-lg shadow-lg shadow-yellow-200/50">{top1.name.substring(0,2)}</div>
+                            <div className="bg-gradient-to-t from-yellow-300 to-yellow-50 w-24 sm:w-28 h-32 rounded-t-2xl flex flex-col items-center justify-start pt-3 border border-yellow-300 shadow-xl relative overflow-hidden">
+                              <div className="absolute inset-0 bg-white/20 w-full h-full transform -skew-x-12"></div>
+                              <span className="text-4xl font-black text-yellow-600 relative z-10">1</span><span className="text-xs sm:text-sm font-black text-yellow-700 mt-1 relative z-10">{top1.mmr} MMR</span>
+                            </div>
+                          </div>
+                        )}
+                        {top3 && (
+                          <div className="flex flex-col items-center animate-in slide-in-from-bottom-4 duration-700 delay-200">
+                            <div className="bg-orange-50 rounded-full w-12 h-12 flex items-center justify-center font-bold text-orange-700 mb-2 border-2 border-orange-200 shadow-sm">{top3.name.substring(0,2)}</div>
+                            <div className="bg-gradient-to-t from-orange-200 to-orange-50 w-20 sm:w-24 h-20 rounded-t-2xl flex flex-col items-center justify-start pt-2 border border-orange-200 shadow-inner">
+                              <span className="text-xl font-black text-orange-500">3</span><span className="text-[10px] sm:text-xs font-bold text-orange-600 mt-1">{top3.mmr} MMR</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="space-y-3">
+                      {rankedPlayers.map((p, index) => {
+                        const totalMatches = p.win + p.lose;
+                        const winRate = totalMatches > 0 ? Math.round((p.win / totalMatches) * 100) : 0;
+                        const bestPartner = getBestPartner(p.name);
+                        
+                        return (
+                          <div key={p.id} className="bg-white border border-slate-200 p-3 sm:p-4 rounded-2xl flex items-center justify-between hover:shadow-md transition-shadow hover:border-indigo-200 group">
+                            <div className="flex items-center gap-3 sm:gap-4">
+                              <span className={`font-black text-base sm:text-lg w-6 text-center ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-slate-400' : index === 2 ? 'text-orange-400' : 'text-slate-300'}`}>{index + 1}</span>
+                              <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-bold text-slate-800 text-sm sm:text-base">{p.name}</span>
+                                </div>
+                                <div className="text-[10px] sm:text-xs text-slate-500 flex gap-2 sm:gap-3 items-center">
+                                  <span className="bg-slate-50 px-1.5 py-0.5 rounded">W <b>{p.win}</b> - L <b>{p.lose}</b></span>
+                                  <span className={`font-bold ${winRate >= 50 ? 'text-emerald-500' : 'text-rose-500'}`}>{winRate}% WR</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right flex flex-col items-end gap-1">
+                              <span className="font-black text-base sm:text-lg text-indigo-600 tracking-tight">{p.mmr}</span>
+                              <span className="text-[9px] sm:text-[10px] text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full border border-slate-100">คู่หูชนะบ่อย: <span className="font-bold text-slate-600">{bestPartner}</span></span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
+
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 4: CALCULATOR */}
         {activeTab === 'calculator' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="bg-white rounded-3xl shadow-[0_2px_20px_-8px_rgba(0,0,0,0.05)] border border-slate-100 overflow-hidden">
@@ -849,7 +942,6 @@ export default function App() {
                         <button onClick={addCalcPlayer} className="text-[10px] sm:text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2.5 sm:px-3 py-1.5 rounded-lg font-bold transition-colors">+ เพิ่มคน</button>
                       </div>
 
-                      {/* 🌟 เซ็ตเวลาออกทุกคน */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 bg-indigo-50 p-3 rounded-xl border border-indigo-100">
                         <div className="flex items-center gap-2">
                           <Copy size={14} className="text-indigo-500" />
